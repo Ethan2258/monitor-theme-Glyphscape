@@ -83,9 +83,45 @@ export function searchNodes(nodes: Node[], query: string): Node[] {
  * never a string: a group may be named anything, 全部 included. `""` is the
  * ungrouped.
  */
-export type Filters = { group: string | null; region: string | null; query: string; sort: SortKey }
+export type Filters = { group: string | null; region: string | null; query: string; sort: SortKey; status: Status | null }
 
-export const NO_FILTERS: Filters = { group: null, region: null, query: "", sort: "default" }
+export const NO_FILTERS: Filters = { group: null, region: null, query: "", sort: "default", status: null }
+
+/**
+ * The states a node can be picked out by, as in the hub's own node list:
+ * gone quiet, near its traffic quota, near or past its expiry, and -- seen only
+ * by a signed-in operator -- not public.
+ */
+export const STATUSES = [
+  ["offline", "离线"],
+  ["traffic", "流量预警"],
+  ["expiring", "即将到期"],
+  ["private", "不公开"],
+] as const
+export type Status = (typeof STATUSES)[number][0]
+
+/** Past this share of its quota, a plan's traffic is a warning. */
+const TRAFFIC_WARN = 80
+/** Within this many days of its expiry, or past it, a node is expiring. */
+const EXPIRY_WARN = 7
+
+export function hasStatus(n: Node, status: Status): boolean {
+  switch (status) {
+    case "offline":
+      return !n.online && (n.cpu_cores > 0 || n.mem_total > 0)
+    case "traffic": {
+      if (!(n.traffic_limit > 0)) return false
+      const used = typeof n.month_used === "number" ? n.month_used : n.month_rx + n.month_tx
+      return percent(used, n.traffic_limit) >= TRAFFIC_WARN
+    }
+    case "expiring": {
+      const days = n.expires_in !== undefined ? n.expires_in : daysUntil(n.expires_at)
+      return days !== null && days <= EXPIRY_WARN
+    }
+    case "private":
+      return n.public === false
+  }
+}
 
 /**
  * The nodes as narrowed by `filters`, in order. A group tab or a country that
@@ -103,6 +139,10 @@ export function narrow(nodes: Node[], filters: Filters) {
   const inCountry = (n: Node, code: string) => (n.country ?? "").toUpperCase() === code
   const region = filters.region !== null && inGroup.some((n) => inCountry(n, filters.region!)) ? filters.region : null
   const inRegion = region === null ? inGroup : inGroup.filter((n) => inCountry(n, region))
-  const shown = sortNodes(searchNodes(inRegion, filters.query), filters.sort)
-  return { groups, ungrouped, group, region, inGroup, shown }
+  const status = filters.status
+  const inStatus = status === null ? inRegion : inRegion.filter((n) => hasStatus(n, status))
+  const shown = sortNodes(searchNodes(inStatus, filters.query), filters.sort)
+  // How many of the nodes the group and country leave are in each state, for the chips.
+  const counts = Object.fromEntries(STATUSES.map(([key]) => [key, inRegion.filter((n) => hasStatus(n, key)).length])) as Record<Status, number>
+  return { groups, ungrouped, group, region, inGroup, shown, counts }
 }

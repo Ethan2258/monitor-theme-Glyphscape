@@ -208,7 +208,12 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
       // OS line below does not wrap, so on a phone the card would grow past its
       // column and scroll the page sideways. The truncate inside only takes effect
       // once the card is allowed to be narrower.
-      className="min-w-0 cursor-pointer gap-0 p-4 transition-colors hover:border-ring"
+      className={cn(
+        "min-w-0 cursor-pointer gap-0 p-4 transition-colors hover:border-ring",
+        // Gone quiet: a red edge and a faint red wash, so it is found at a glance
+        // in a grid of live ones.
+        !node.online && deployed(node) && "border-hot/40 bg-[color-mix(in_srgb,var(--hot)_5%,var(--card))]",
+      )}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
@@ -247,7 +252,17 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
           cores, memory, disk size and traffic totals, and showing those with
           the live figures blank beats a stretched card with one line in it. */}
       {deployed(node) ? (
-        <>
+        <div className="relative">
+          {/* The last figures it reported, faded, with how long it has been
+              gone set over them. */}
+          {!node.online && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+              <span className="tnum rounded-full border border-hot/40 bg-card px-3 py-1 text-xs font-medium text-hot shadow-xs">
+                离线
+              </span>
+            </div>
+          )}
+          <div className={cn(!node.online && "opacity-35")}>
           <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4">
             {/* The core count belongs beside the word CPU: it is what the
                 percentage and the load averages are both measured against. */}
@@ -292,8 +307,9 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
               {bytes(node.total_tx)}
             </span>
           </div>
+          </div>
           {price && <Price node={node} rates={rates} primary={primary} />}
-        </>
+        </div>
       ) : (
         /* Never connected: nothing to plot, so the card stays short rather than
            padding out to match its neighbours. */

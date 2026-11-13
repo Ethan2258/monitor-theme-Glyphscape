@@ -302,6 +302,7 @@ export default function App() {
             ungrouped={view.ungrouped}
             group={view.group}
             shown={view.shown}
+            counts={view.counts}
             filters={filters}
             onFilters={setFilters}
             onOpen={go}

@@ -3,7 +3,7 @@ import { NodeTable } from "@/components/NodeTable"
 import { Toolbar, type View } from "@/components/Toolbar"
 import type { Node } from "@/lib/api"
 import type { Rates } from "@/lib/cost"
-import { NO_FILTERS, type Filters } from "@/lib/filter"
+import { NO_FILTERS, STATUSES, type Filters, type Status } from "@/lib/filter"
 import { cn } from "@/lib/utils"
 
 /**
@@ -11,7 +11,9 @@ import { cn } from "@/lib/utils"
  * tabs once the operator has grouped anything, search and order at its end --
  * and the cards under it.
  */
-export function NodeList({ nodes, groups, ungrouped, group, shown, filters, onFilters, onOpen, toolbar, price, rates, primary, view, onView }: {
+export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filters, onFilters, onOpen, toolbar, price, rates, primary, view, onView }: {
+  /** How many nodes are in each state, of those the group and country leave. */
+  counts: Record<Status, number>
   /** Every node, in the operator's order. */
   nodes: Node[]
   groups: string[]
@@ -30,7 +32,10 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, filters, onFi
   view: View
   onView: (view: View) => void
 }) {
-  const narrowed = filters.group !== null || filters.region !== null || filters.query.trim() !== ""
+  const narrowed = filters.group !== null || filters.region !== null || filters.query.trim() !== "" || filters.status !== null
+  // A state no node is in has nothing to show, and is left out -- unless it is
+  // the one picked, which stays so it can be let go of.
+  const states = STATUSES.filter(([key]) => counts[key] > 0 || filters.status === key)
   const tabs = [
     [null, "全部", nodes.length] as const,
     ...groups.map((g) => [g, g, nodes.filter((n) => n.group === g).length] as const),
@@ -69,6 +74,30 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, filters, onFi
                 <span className="tnum text-xs text-muted-foreground">{count}</span>
               </button>
             ))}
+          </div>
+        )}
+        {states.length > 0 && (
+          <div role="group" aria-label="状态" className="flex flex-wrap items-center gap-1.5">
+            {states.map(([key, label]) => {
+              const on = filters.status === key
+              return (
+                <button
+                  key={key}
+                  aria-pressed={on}
+                  onClick={() => onFilters({ ...filters, status: on ? null : key })}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs transition-colors",
+                    on
+                      ? "border-foreground/50 bg-secondary text-foreground"
+                      : "text-muted-foreground hover:border-ring hover:text-foreground",
+                  )}
+                >
+                  <span className={cn("size-1.5 rounded-full", key === "offline" || key === "traffic" ? "bg-hot" : key === "expiring" ? "bg-warn" : "bg-muted-foreground")} />
+                  {label}
+                  <span className="tnum">{counts[key]}</span>
+                </button>
+              )
+            })}
           </div>
         )}
         {toolbar && nodes.length > 1 && (
