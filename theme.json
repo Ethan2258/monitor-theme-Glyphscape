@@ -1,0 +1,146 @@
+{
+  "name": "墨池 · Inkpond",
+  "short": "inkpond",
+  "description": "默认主题的版式，页首一方字符池塘：锦鲤在水里游，读数在纸上；点阵地球仪标出节点所在，价格与剩余价值按实时汇率折成人民币和美元",
+  "version": "1.0.0",
+  "author": "Ethan2258",
+  "url": "https://github.com/Ethan2258/monitor-theme-inkpond",
+  "config": [
+    {
+      "key": "notice",
+      "type": "text",
+      "label": "公告",
+      "default": "",
+      "help": "显示在首页顶部，留空不显示"
+    },
+    {
+      "key": "show_summary",
+      "type": "boolean",
+      "label": "显示总览",
+      "default": true,
+      "help": "池塘里的总览：在线数、实时网速、今日流量、月均支出、剩余价值、最近到期"
+    },
+    {
+      "key": "show_globe",
+      "type": "boolean",
+      "label": "显示地球仪",
+      "default": true,
+      "help": "池塘里的点阵地球仪和地区标签，点击可按地区筛选节点"
+    },
+    {
+      "key": "show_toolbar",
+      "type": "boolean",
+      "label": "显示搜索与排序",
+      "default": true,
+      "help": "节点列表上方右侧的搜索框和排序方式"
+    },
+    {
+      "key": "color_mode",
+      "type": "select",
+      "label": "默认配色",
+      "default": "auto",
+      "help": "访客自己切换过之后，以他的选择为准",
+      "options": [
+        {
+          "value": "auto",
+          "label": "跟随系统"
+        },
+        {
+          "value": "light",
+          "label": "暖纸（浅色）"
+        },
+        {
+          "value": "dark",
+          "label": "暖墨（深色）"
+        }
+      ]
+    },
+    {
+      "key": "footer",
+      "type": "string",
+      "label": "页脚文字",
+      "default": "",
+      "help": "显示在页面底部，留空不显示"
+    },
+    {
+      "type": "title",
+      "label": "价格"
+    },
+    {
+      "key": "show_price",
+      "type": "boolean",
+      "label": "显示价格",
+      "default": true,
+      "help": "节点卡片和详情页上的价格、付款周期和剩余价值"
+    },
+    {
+      "key": "show_cost",
+      "type": "boolean",
+      "label": "显示月均支出",
+      "default": true,
+      "help": "总览里按月折算的支出合计和剩余价值合计"
+    },
+    {
+      "key": "primary_currency",
+      "type": "select",
+      "label": "主要货币",
+      "default": "CNY",
+      "help": "合计和剩余价值以它为主，另一种写在旁边",
+      "options": [
+        {
+          "value": "CNY",
+          "label": "人民币"
+        },
+        {
+          "value": "USD",
+          "label": "美元"
+        }
+      ]
+    },
+    {
+      "key": "live_rates",
+      "type": "boolean",
+      "label": "实时汇率",
+      "default": true,
+      "help": "访客浏览器每天自动取最新汇率（同时问 Cloudflare、jsDelivr、欧洲央行三个公开源，取日期最新的）；关掉则用主题内置的参考汇率，页面不向第三方发请求"
+    },
+    {
+      "type": "title",
+      "label": "池塘"
+    },
+    {
+      "key": "pond",
+      "type": "boolean",
+      "label": "显示池塘",
+      "default": true,
+      "help": "页首水面里游动的字符锦鲤。访客也可以在页头自己收起"
+    },
+    {
+      "key": "pond_feed",
+      "type": "boolean",
+      "label": "允许投喂",
+      "default": true,
+      "help": "点击空白水面撒鱼食"
+    },
+    {
+      "key": "pond_fish",
+      "type": "select",
+      "label": "鱼的数量",
+      "default": "auto",
+      "options": [
+        {
+          "value": "auto",
+          "label": "按窗口大小"
+        },
+        {
+          "value": "few",
+          "label": "少"
+        },
+        {
+          "value": "many",
+          "label": "多"
+        }
+      ]
+    }
+  ]
+}

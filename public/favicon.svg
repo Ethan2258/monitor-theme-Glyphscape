@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- A koi as the pond draws one: square tiles, tail to the left. One mid grey
+       rather than a light/dark pair, since a favicon sits on browser chrome this
+       page does not pick and has to read on both; the red is the koi's. -->
+  <g fill="#8a8a8a">
+    <rect x="1" y="6.5" width="3" height="3" rx=".7"/>
+    <rect x="5" y="4.5" width="3" height="3" rx=".7"/>
+    <rect x="5" y="8.5" width="3" height="3" rx=".7"/>
+  </g>
+  <g fill="#e2562c">
+    <rect x="9" y="4.5" width="3" height="3" rx=".7"/>
+    <rect x="9" y="8.5" width="3" height="3" rx=".7"/>
+    <rect x="13" y="6.5" width="2.2" height="3" rx=".7"/>
+  </g>
+</svg>

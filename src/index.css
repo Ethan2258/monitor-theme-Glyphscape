@@ -1,0 +1,195 @@
+/* Scan this app's own source and nothing else. Tailwind's automatic detection
+   walks the whole repository, turning a word in an unrelated file into a utility
+   class in the shipped stylesheet. The vendored pond is plain JavaScript that
+   names no class, so it is left out as well. */
+@import "tailwindcss" source(none);
+@source "../index.html";
+@source "../src/App.tsx";
+@source "../src/components";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Paper and ink, after the pond itself: the two page colours are the pond's own
+   (`page` in vendor/ascii-pond/pond.js), so its water and the page are one
+   surface. One accent, terracotta, for what needs attention and for the nodes on
+   the globe; amber for what will need it soon. Everything else is ink. */
+:root {
+  color-scheme: light;
+  --radius: 0.75rem;
+  --background: #f5f4f1;
+  --foreground: #262523;
+  --card: #fdfcfa;
+  --card-foreground: #262523;
+  --popover: #fdfcfa;
+  --primary: #262523;
+  --primary-foreground: #fdfcfa;
+  --secondary: #ebe8e2;
+  --secondary-foreground: #262523;
+  --muted: #ebe8e2;
+  --muted-foreground: #68635c;
+  --accent: #ebe8e2;
+  --accent-foreground: #262523;
+  --border: rgb(38 37 35 / 11%);
+  --ring: #a39e96;
+  --hot: #b84a32;
+  --destructive: #b84a32;
+  --warn: #9a6b1c;
+  --online: #5f8a52;
+  --offline: #9a958e;
+  /* Charts: ink for one series; sky for what comes in and terracotta for what
+     goes out; then ochre, sage and heather for further latency probes, each also
+     told apart by its dash. */
+  --ink: #3b3936;
+  --rx: #4f7ea6;
+  --tx: #c8623f;
+  --chart-1: #4f7ea6;
+  --chart-2: #c8623f;
+  --chart-3: #a8841a;
+  --chart-4: #6b8f5e;
+  --chart-5: #8a74b0;
+  /* The globe. */
+  --globe: #ece8e1;
+  --globe-land: #3b3936;
+  --marker: #c8623f;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #1a1917;
+  --foreground: #f2ece5;
+  --card: #232120;
+  --card-foreground: #f2ece5;
+  --popover: #2a2826;
+  --primary: #efe8e1;
+  --primary-foreground: #1f1d1b;
+  --secondary: #2f2d2a;
+  --secondary-foreground: #f2ece5;
+  --muted: #2f2d2a;
+  --muted-foreground: #a8a198;
+  --accent: #2f2d2a;
+  --accent-foreground: #f2ece5;
+  --border: rgb(255 247 240 / 10%);
+  --ring: #7a746d;
+  --hot: #e58a6c;
+  --destructive: #e58a6c;
+  --warn: #dcb062;
+  --online: #8db57c;
+  --offline: #7d776f;
+  --ink: #ded7d0;
+  --rx: #8fb6d8;
+  --tx: #e08b6e;
+  --chart-1: #8fb6d8;
+  --chart-2: #e08b6e;
+  --chart-3: #e2bd6a;
+  --chart-4: #9fc48e;
+  --chart-5: #b7a5e0;
+  --globe: #24221f;
+  --globe-land: #e6ded4;
+  --marker: #e8906f;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-mono: var(--mono);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-hot: var(--hot);
+  --color-warn: var(--warn);
+  --color-online: var(--online);
+  --color-offline: var(--offline);
+  --color-ink: var(--ink);
+  --color-rx: var(--rx);
+  --color-tx: var(--tx);
+  --color-marker: var(--marker);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  /* Reserve the scrollbar's width on every page: without it, leaving a route
+     whose content exceeds the fold widens the page. */
+  html { scrollbar-gutter: stable; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "palt";
+  }
+  ::selection { background: color-mix(in srgb, var(--foreground) 18%, transparent); }
+}
+
+/* Every figure is set in the pond's monospace: digits of one width keep live
+   numbers from shifting as they update, and columns of them line up. The
+   Chinese beside a figure falls through to the system's own font. */
+:root {
+  --mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+.tnum,
+.recharts-cartesian-axis-tick-value,
+.recharts-brush-texts,
+.recharts-tooltip-wrapper {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+/* A space in a monospace is as wide as a digit, which pulls "30 天 8 小时" and
+   "1.74 / 4.00 GB" apart into separate words. Drawn back to the width of a
+   space in running text. */
+.tnum {
+  word-spacing: -0.25em;
+}
+
+/* The pond: the water at the head of the page, behind the header and the
+   overview and nowhere else. Its lower edge fades into the page, so the fish
+   swim off into the paper rather than against a line. */
+.pond {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 120px), transparent);
+}
+/* In forced-colours mode its glyphs turn into unreadable blocks, and it is decoration. */
+@media (forced-colors: active) {
+  .pond { display: none; }
+}
+
+/* The palette change (lib/palette.ts): the new page is uncovered by a widening
+   ring of water, its edge animated by script; the rings that ride on it are a
+   layer of their own, above both pages. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 2; }
+::view-transition-group(ink-ripple) {
+  z-index: 3;
+  animation: none;
+}
+::view-transition-old(ink-ripple),
+::view-transition-new(ink-ripple) {
+  animation: none;
+}
