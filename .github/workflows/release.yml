@@ -44,7 +44,14 @@ jobs:
       # A manual dispatch builds and packages without publishing, so the path can
       # be exercised without cutting a release. gh ships on the runner, keeping a
       # third-party action out of the contents:write step.
+      # Pushing the same tag again runs this workflow a second time; the release
+      # already exists then, so skip instead of failing the run.
       - if: startsWith(github.ref, 'refs/tags/')
-        run: gh release create "$GITHUB_REF_NAME" theme.tar.gz theme.tar.gz.sha256 --generate-notes --repo "$GITHUB_REPOSITORY"
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::release $GITHUB_REF_NAME already exists, skipping"
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" theme.tar.gz theme.tar.gz.sha256 --generate-notes --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
