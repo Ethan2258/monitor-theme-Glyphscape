@@ -52,6 +52,46 @@ const LIGHT = (() => {
   return v.map((c) => c / n)
 })()
 
+/** Seconds the idle globe rests on one region before turning to the next. */
+const DWELL = 9000
+
+/**
+ * The markers grouped into regions: sorted round the globe by longitude, and a
+ * new region begun wherever two neighbours lie more than 60° apart. Each region's
+ * centre is the node-weighted middle of its markers; the region with the most
+ * nodes comes first.
+ */
+function regionsOf(markers: Marker[]): { lon: number; lat: number }[] {
+  const sorted = [...markers].sort((a, b) => a.lon - b.lon)
+  if (sorted.length === 0) return []
+  // Start the sweep after the widest gap, so a region straddling 180° is not split.
+  let widest = 0, at = 0
+  for (let i = 0; i < sorted.length; i++) {
+    const next = sorted[(i + 1) % sorted.length]
+    const gap = (((next.lon - sorted[i].lon) % 360) + 360) % 360 || (sorted.length === 1 ? 360 : 0)
+    if (gap > widest) { widest = gap; at = (i + 1) % sorted.length }
+  }
+  const ring = [...sorted.slice(at), ...sorted.slice(0, at)]
+  const groups: Marker[][] = [[ring[0]]]
+  for (let i = 1; i < ring.length; i++) {
+    const gap = (((ring[i].lon - ring[i - 1].lon) % 360) + 360) % 360
+    if (gap > 60) groups.push([ring[i]])
+    else groups[groups.length - 1].push(ring[i])
+  }
+  return groups
+    .map((g) => {
+      let sx = 0, sy = 0, lat = 0, n = 0
+      for (const m of g) {
+        sx += Math.cos(m.lon * RAD) * m.count
+        sy += Math.sin(m.lon * RAD) * m.count
+        lat += m.lat * m.count
+        n += m.count
+      }
+      return { lon: Math.atan2(sy, sx) * DEG, lat: clamp(lat / n, -25, 35), n }
+    })
+    .sort((a, b) => b.n - a.n)
+}
+
 /** Room around the sphere for a marker's ring to spread into. */
 const PAD = 14
 /** How far to either side the idle globe sways, in degrees, and how long one sway takes, in seconds. */
@@ -123,6 +163,10 @@ export function Globe({ markers, selected, onPick }: {
     const view = { lon: 105, lat: 20, size: 0, fleet: "", centre: { lon: 105, lat: 20 } }
     // Where the globe is turning to by itself, if anywhere.
     let home: { lon: number; lat: number } | null = null
+    // The fleet's regions, most nodes first; which one the idle globe faces, and since when.
+    let regions: { lon: number; lat: number }[] = []
+    let tour = 0
+    let tourAt = 0
     let spin = { lon: 0, lat: 0 }
     let drag: { x: number; y: number; moved: number } | null = null
     let hover: string | null = null
@@ -170,10 +214,9 @@ export function Globe({ markers, selected, onPick }: {
       ctx.arc(cx, cy, r, 0, Math.PI * 2)
       ctx.fillStyle = colors.globe
       ctx.fill()
-      const shade = ctx.createRadialGradient(cx - r * 0.38, cy - r * 0.42, r * 0.05, cx, cy, r)
-      shade.addColorStop(0, colors.dark ? "rgba(255,247,240,0.07)" : "rgba(255,255,255,0.55)")
-      shade.addColorStop(0.55, "rgba(255,255,255,0)")
-      shade.addColorStop(1, colors.dark ? "rgba(0,0,0,0.35)" : "rgba(38,37,35,0.10)")
+      const shade = ctx.createRadialGradient(cx, cy, r * 0.82, cx, cy, r)
+      shade.addColorStop(0, "rgba(0,0,0,0)")
+      shade.addColorStop(1, colors.dark ? "rgba(0,0,0,0.22)" : "rgba(38,37,35,0.07)")
       ctx.fillStyle = shade
       ctx.fill()
 
@@ -238,6 +281,16 @@ export function Globe({ markers, selected, onPick }: {
         ctx.beginPath()
         ctx.arc(x, y, bead, 0, Math.PI * 2)
         ctx.fill()
+        // More than one node there: how many, beside the bead.
+        if (m.count > 1) {
+          ctx.font = `600 ${Math.round(10 + Math.min(2, size / 200))}px "Geist Mono Variable", ui-monospace, monospace`
+          ctx.textBaseline = "middle"
+          ctx.lineWidth = 3
+          ctx.strokeStyle = colors.globe
+          ctx.strokeText(String(m.count), x + bead + 3, y)
+          ctx.fillStyle = colors.fg
+          ctx.fillText(String(m.count), x + bead + 3, y)
+        }
         if (active) {
           ctx.strokeStyle = colors.fg
           ctx.lineWidth = 1.25
@@ -262,22 +315,16 @@ export function Globe({ markers, selected, onPick }: {
       // over Africa. Set outright the first time, and turned to whenever the
       // countries shown change -- a group tab that holds only American nodes
       // would otherwise leave the globe showing an Asia with nothing on it.
-      const fleet = markers.map((m) => m.code).join()
+      const fleet = markers.map((m) => `${m.code}${m.count}`).join()
       if (fleet !== view.fleet && markers.length) {
-        let sx = 0, sy = 0, lat = 0, total = 0
-        for (const m of markers) {
-          sx += Math.cos(m.lon * RAD) * m.count
-          sy += Math.sin(m.lon * RAD) * m.count
-          lat += m.lat * m.count
-          total += m.count
-        }
-        const centre = {
-          lon: Math.hypot(sx, sy) > 0.05 * total ? Math.atan2(sy, sx) * DEG : view.lon,
-          lat: clamp(lat / total, -25, 35),
-        }
+        regions = regionsOf(markers)
+        tour = 0
+        tourAt = now
+        // The first region faced is the one with the most nodes.
+        const centre = regions[0]
         view.centre = centre
         if (view.fleet) home = centre
-        else Object.assign(view, centre)
+        else Object.assign(view, { lon: centre.lon, lat: centre.lat })
         view.fleet = fleet
       }
 
@@ -307,10 +354,17 @@ export function Globe({ markers, selected, onPick }: {
         view.lat = clamp(view.lat + spin.lat * dt, -70, 70)
         const friction = Math.exp(-dt * 3)
         spin = { lon: spin.lon * friction, lat: spin.lat * friction }
-        // Left alone, it sways slowly to either side of where the nodes are,
-        // rather than turning them off the far side for half of every minute.
+        // Left alone, it faces each region of the fleet in turn -- Asia for a
+        // while, then America -- swaying a little while it rests on one, rather
+        // than settling on the empty ocean halfway between them.
         if (!reduced.matches && !hover && now > restUntil && Math.abs(spin.lon) < 1) {
-          const sway = view.centre.lon + SWAY * Math.sin(now / 1000 / PERIOD * Math.PI * 2)
+          if (regions.length > 1 && now - tourAt > DWELL) {
+            tour = (tour + 1) % regions.length
+            tourAt = now
+          }
+          if (regions.length) view.centre = regions[tour]
+          const amp = regions.length > 1 ? 10 : SWAY
+          const sway = view.centre.lon + amp * Math.sin(now / 1000 / PERIOD * Math.PI * 2)
           const ease = 1 - Math.exp(-dt * 0.8)
           view.lon += ((((sway - view.lon) % 360) + 540) % 360 - 180) * ease
           view.lat += (view.centre.lat - view.lat) * ease * 0.5
