@@ -128,14 +128,14 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
           <div className="hidden lg:block">
             <NodeTable nodes={shown} price={priced} rates={rates} primary={primary} onOpen={onOpen} />
           </div>
-          <div className="grid items-start gap-4 sm:grid-cols-2 lg:hidden">
+          <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:hidden">
             {shown.map((n) => (
               <NodeCard key={n.id} node={n} price={priced} rates={rates} primary={primary} onOpen={() => onOpen(n.id)} />
             ))}
           </div>
         </>
       ) : (
-        <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {shown.map((n) => (
             <NodeCard key={n.id} node={n} price={priced} rates={rates} primary={primary} onOpen={() => onOpen(n.id)} />
           ))}

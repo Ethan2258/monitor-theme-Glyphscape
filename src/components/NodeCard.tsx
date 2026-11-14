@@ -252,7 +252,7 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
           cores, memory, disk size and traffic totals, and showing those with
           the live figures blank beats a stretched card with one line in it. */}
       {deployed(node) ? (
-        <div className="relative">
+        <div className="relative flex flex-1 flex-col">
           {/* The last figures it reported, faded, with how long it has been
               gone set over them. */}
           {!node.online && (
@@ -262,8 +262,8 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
               </span>
             </div>
           )}
-          <div className={cn(!node.online && "opacity-35")}>
-          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4">
+          <div className={cn("flex flex-1 flex-col", !node.online && "opacity-35")}>
+          <div className="mt-4 mb-4 grid grid-cols-2 gap-x-4 gap-y-4">
             {/* The core count belongs beside the word CPU: it is what the
                 percentage and the load averages are both measured against. */}
             <Meter
@@ -289,7 +289,7 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
             />
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t pt-4 text-xs">
+          <div className="mt-auto grid grid-cols-2 gap-x-4 gap-y-2 border-t pt-4 text-xs">
             <span className="tnum inline-flex items-center gap-1.5">
               <InIcon className="size-3 text-muted-foreground" />
               {m ? rate(m.net_rx) : "—"}
