@@ -9,9 +9,32 @@ let instance: PondInstance | null = null
 
 const root = document.documentElement
 
-/** The pond's palette follows the page's. */
-export function setPondTheme(dark: boolean) {
-  instance?.setTheme(!dark)
+/**
+ * The pond's palette follows the page's. Over `duration` milliseconds it blends:
+ * the pond is switched at once underneath, and a still of it as it was lies on
+ * top and fades away in the page's own ease, so the water changes colour with
+ * the paper while the fish swim on. Only opacity moves, on the compositor.
+ */
+export function setPondTheme(dark: boolean, duration = 0) {
+  if (!instance) return
+  const { canvas } = instance
+  let still: HTMLCanvasElement | null = null
+  if (duration > 0 && canvas.isConnected && canvas.width && canvas.offsetParent) {
+    still = document.createElement("canvas")
+    still.width = canvas.width
+    still.height = canvas.height
+    still.getContext("2d")?.drawImage(canvas, 0, 0)
+    still.className = canvas.className
+    still.setAttribute("aria-hidden", "true")
+    canvas.after(still)
+  }
+  instance.setTheme(!dark)
+  if (!still) return
+  const fade = still.animate([{ opacity: 1 }, { opacity: 0 }], {
+    duration, easing: "cubic-bezier(0.37, 0, 0.63, 1)", fill: "forwards",
+  })
+  const done = () => still?.remove()
+  fade.finished.then(done, done)
 }
 
 /**

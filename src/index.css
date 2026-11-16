@@ -175,21 +175,47 @@
   .pond { display: none; }
 }
 
-/* The palette change (lib/palette.ts): the new page is uncovered by a widening
-   ring of water, its edge animated by script; the rings that ride on it are a
-   layer of their own, above both pages. */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
+/* The palette change (lib/palette.ts): every colour token is registered as a
+   colour, so while `.palette-fade` is on the root they blend from the old
+   palette to the new in one ease-in-out sine, the background scene blending in
+   step. The page's own hover transitions are held meanwhile, or each would
+   restart on every frame of the blend. */
+@property --background { syntax: "<color>"; inherits: true; initial-value: #f5f4f1; }
+@property --foreground { syntax: "<color>"; inherits: true; initial-value: #262523; }
+@property --card { syntax: "<color>"; inherits: true; initial-value: #fdfcfa; }
+@property --card-foreground { syntax: "<color>"; inherits: true; initial-value: #262523; }
+@property --popover { syntax: "<color>"; inherits: true; initial-value: #fdfcfa; }
+@property --primary { syntax: "<color>"; inherits: true; initial-value: #262523; }
+@property --primary-foreground { syntax: "<color>"; inherits: true; initial-value: #fdfcfa; }
+@property --secondary { syntax: "<color>"; inherits: true; initial-value: #ebe8e2; }
+@property --secondary-foreground { syntax: "<color>"; inherits: true; initial-value: #262523; }
+@property --muted { syntax: "<color>"; inherits: true; initial-value: #ebe8e2; }
+@property --muted-foreground { syntax: "<color>"; inherits: true; initial-value: #68635c; }
+@property --accent { syntax: "<color>"; inherits: true; initial-value: #ebe8e2; }
+@property --accent-foreground { syntax: "<color>"; inherits: true; initial-value: #262523; }
+@property --border { syntax: "<color>"; inherits: true; initial-value: rgb(38 37 35 / 11%); }
+@property --ring { syntax: "<color>"; inherits: true; initial-value: #a39e96; }
+@property --hot { syntax: "<color>"; inherits: true; initial-value: #b84a32; }
+@property --destructive { syntax: "<color>"; inherits: true; initial-value: #b84a32; }
+@property --warn { syntax: "<color>"; inherits: true; initial-value: #9a6b1c; }
+@property --online { syntax: "<color>"; inherits: true; initial-value: #5f8a52; }
+@property --offline { syntax: "<color>"; inherits: true; initial-value: #9a958e; }
+@property --ink { syntax: "<color>"; inherits: true; initial-value: #3b3936; }
+@property --rx { syntax: "<color>"; inherits: true; initial-value: #4f7ea6; }
+@property --tx { syntax: "<color>"; inherits: true; initial-value: #c8623f; }
+@property --chart-1 { syntax: "<color>"; inherits: true; initial-value: #4f7ea6; }
+@property --chart-2 { syntax: "<color>"; inherits: true; initial-value: #c8623f; }
+@property --chart-3 { syntax: "<color>"; inherits: true; initial-value: #a8841a; }
+@property --chart-4 { syntax: "<color>"; inherits: true; initial-value: #6b8f5e; }
+@property --chart-5 { syntax: "<color>"; inherits: true; initial-value: #8a74b0; }
+@property --globe { syntax: "<color>"; inherits: true; initial-value: #ece8e1; }
+@property --globe-land { syntax: "<color>"; inherits: true; initial-value: #3b3936; }
+@property --marker { syntax: "<color>"; inherits: true; initial-value: #c8623f; }
+:root.palette-fade {
+  transition-property: --background, --foreground, --card, --card-foreground, --popover, --primary, --primary-foreground, --secondary, --secondary-foreground, --muted, --muted-foreground, --accent, --accent-foreground, --border, --ring, --hot, --destructive, --warn, --online, --offline, --ink, --rx, --tx, --chart-1, --chart-2, --chart-3, --chart-4, --chart-5, --globe, --globe-land, --marker;
+  transition-duration: 560ms;
+  transition-timing-function: cubic-bezier(0.37, 0, 0.63, 1);
 }
-::view-transition-old(root) { z-index: 1; }
-::view-transition-new(root) { z-index: 2; }
-::view-transition-group(ink-ripple) {
-  z-index: 3;
-  animation: none;
-}
-::view-transition-old(ink-ripple),
-::view-transition-new(ink-ripple) {
-  animation: none;
+:root.palette-fade * {
+  transition: none !important;
 }

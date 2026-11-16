@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react"
 
+import { whenStill } from "./still.ts"
+
 export type Metrics = {
   uptime: number
   cpu: number
@@ -234,9 +236,12 @@ export function useNodes() {
       if (gap) speedHistory.length = 0
       gap = false
       sample(safe)
-      setNodes(safe)
-      setError(null)
-      setClosed(false)
+      // Not mid-way through a palette change, where a full re-render would stall it.
+      whenStill("nodes", () => {
+        setNodes(safe)
+        setError(null)
+        setClosed(false)
+      })
     }
 
     // Bumped by `pause`: a request started before the page was hidden may fail

@@ -373,7 +373,9 @@ export function Globe({ markers, selected, onPick }: {
 
       // The palette is looked up now and then rather than listened for.
       // At once when the palette has changed, so the globe turns with the page.
-      if (frame++ % 20 === 0 || colors.dark !== document.documentElement.classList.contains("dark")) colors = readColors(canvas)
+      // Every frame while the palette blends (lib/palette.ts), so the globe changes with the page.
+      const blending = document.documentElement.classList.contains("palette-fade")
+      if (blending || frame++ % 20 === 0 || colors.dark !== document.documentElement.classList.contains("dark")) colors = readColors(canvas)
       draw(now)
     }
 

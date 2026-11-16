@@ -127,12 +127,20 @@ function useTheme(mode: Config["color_mode"] | null) {
   ] as const
 }
 
+/**
+ * The palette toggle, holding the palette state itself: a change re-renders this
+ * button and nothing else, so the frame the view transition waits on stays short.
+ */
+function ThemeSwitch({ mode }: { mode: Config["color_mode"] | null }) {
+  const [, choice, pick] = useTheme(mode)
+  return <ThemeMenu choice={choice} onPick={pick} />
+}
+
 export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [meError, setMeError] = useState("")
   const [config, setConfig] = useState<Config | null>(null)
   const settings = config ?? DEFAULTS
-  const [, themeChoice, pickTheme] = useTheme(config?.color_mode ?? null)
   // The visitor's own switch for the fish, within what the operator allows.
   const [fish, setFish] = useState(() => stored("inkpond:pond") !== "off")
   const rates = useRates(settings.live_rates)
@@ -232,7 +240,7 @@ export default function App() {
               {me.authed ? "后台" : "登录"}
             </a>
             <span className="h-4 w-px bg-border" aria-hidden />
-            <ThemeMenu choice={themeChoice} onPick={pickTheme} />
+            <ThemeSwitch mode={config?.color_mode ?? null} />
           </div>
         </header>
 
