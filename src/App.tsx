@@ -15,6 +15,7 @@ import { api, useNodes } from "@/lib/api"
 import { DEFAULTS, loadConfig, type Config } from "@/lib/config"
 import { isSortKey, narrow, NO_FILTERS, type Filters } from "@/lib/filter"
 import { applyPalette, applyScene, transitionPalette } from "@/lib/palette"
+import { stir } from "@/lib/pond"
 import { useRates } from "@/lib/rates"
 
 const WRAITH_ICON =
@@ -201,6 +202,22 @@ export default function App() {
   const rates = useRates(settings.live_rates)
   const { nodes, error, closed } = useNodes()
   const [open, go] = useNodeRoute()
+  const adminTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    const clear = () => {
+      if (adminTimer.current) {
+        clearTimeout(adminTimer.current)
+        adminTimer.current = null
+      }
+      document.documentElement.classList.remove("leaving-admin")
+    }
+    clear()
+    addEventListener("pageshow", clear)
+    return () => {
+      removeEventListener("pageshow", clear)
+      clear()
+    }
+  }, [])
   // What the list is narrowed to, held here so it survives a visit to a node's
   // page. The order is the visitor's preference and outlives the tab.
   const [filters, setFilters] = useState<Filters>(() => {
@@ -292,6 +309,19 @@ export default function App() {
           <div data-pond-avoid="" data-sky-dim="" className="flex items-center gap-1">
             <a
               href="/admin/"
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+                if (matchMedia("(prefers-reduced-motion: reduce)").matches) return
+                e.preventDefault()
+                const box = e.currentTarget.getBoundingClientRect()
+                stir({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
+                void fetch("/admin/", { credentials: "same-origin" }).catch(() => {})
+                document.documentElement.classList.add("leaving-admin")
+                if (adminTimer.current) clearTimeout(adminTimer.current)
+                adminTimer.current = setTimeout(() => {
+                  location.href = "/admin/"
+                }, 220)
+              }}
               className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               <DoorIcon className="size-4" />
@@ -313,73 +343,77 @@ export default function App() {
           </div>
         )}
 
-        {open !== null ? (
-          selected ? <NodeHead node={selected} onBack={() => go(null)} /> : <div className="h-28" />
-        ) : !nodes || !config ? (
-          <div className="h-[22rem]" />
-        ) : (
-          <Hero
-            nodes={view.shown}
-            scope={view.inGroup}
-            region={view.region}
-            onRegion={(region) => setFilters({ ...filters, group: view.group, region })}
-            summary={settings.show_summary}
-            globe={settings.show_globe}
-            cost={settings.show_price && settings.show_cost && sorted.some((n) => n.price > 0)}
-            rates={rates}
-            primary={primary}
-          />
-        )}
+        <div key={open ?? "list"} className="view-enter">
+          {open !== null ? (
+            selected ? <NodeHead node={selected} onBack={() => go(null)} /> : <div className="h-28" />
+          ) : !nodes || !config ? (
+            <div className="h-[22rem]" />
+          ) : (
+            <Hero
+              nodes={view.shown}
+              scope={view.inGroup}
+              region={view.region}
+              onRegion={(region) => setFilters({ ...filters, group: view.group, region })}
+              summary={settings.show_summary}
+              globe={settings.show_globe}
+              cost={settings.show_price && settings.show_cost && sorted.some((n) => n.price > 0)}
+              rates={rates}
+              primary={primary}
+            />
+          )}
+        </div>
       </div>
 
       <main className="mx-auto w-full max-w-[1320px] flex-1 space-y-5 px-4 pb-10 sm:px-6">
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        {open !== null ? (
-          !nodes ? (
-            <Skeleton className="h-96" />
-          ) : selected ? (
-            <Card className="gap-0 p-4 sm:p-6">
-              <Suspense fallback={<Skeleton className="h-96" />}>
-                <NodeDetail
-                  node={selected}
-                  historyDays={me.history_days ?? 7}
-                  price={settings.show_price}
-                  rates={rates}
-                  primary={primary}
-                />
-              </Suspense>
-            </Card>
+        <div key={open ?? "list"} className="view-enter">
+          {open !== null ? (
+            !nodes ? (
+              <Skeleton className="h-96" />
+            ) : selected ? (
+              <Card className="gap-0 p-4 sm:p-6">
+                <Suspense fallback={<Skeleton className="h-96" />}>
+                  <NodeDetail
+                    node={selected}
+                    historyDays={me.history_days ?? 7}
+                    price={settings.show_price}
+                    rates={rates}
+                    primary={primary}
+                  />
+                </Suspense>
+              </Card>
+            ) : (
+              <p className="py-16 text-center text-sm text-muted-foreground">
+                节点不存在或未公开。<button className="underline" onClick={() => go(null)}>返回列表</button>
+              </p>
+            )
+          ) : !nodes || !config ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-72" />
+              ))}
+            </div>
           ) : (
-            <p className="py-16 text-center text-sm text-muted-foreground">
-              节点不存在或未公开。<button className="underline" onClick={() => go(null)}>返回列表</button>
-            </p>
-          )
-        ) : !nodes || !config ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {[0, 1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-72" />
-            ))}
-          </div>
-        ) : (
-          <NodeList
-            nodes={sorted}
-            groups={view.groups}
-            ungrouped={view.ungrouped}
-            group={view.group}
-            shown={view.shown}
-            counts={view.counts}
-            filters={filters}
-            onFilters={setFilters}
-            onOpen={go}
-            toolbar={settings.show_toolbar}
-            price={settings.show_price}
-            rates={rates}
-            primary={primary}
-            view={layout}
-            onView={setLayout}
-          />
-        )}
+            <NodeList
+              nodes={sorted}
+              groups={view.groups}
+              ungrouped={view.ungrouped}
+              group={view.group}
+              shown={view.shown}
+              counts={view.counts}
+              filters={filters}
+              onFilters={setFilters}
+              onOpen={go}
+              toolbar={settings.show_toolbar}
+              price={settings.show_price}
+              rates={rates}
+              primary={primary}
+              view={layout}
+              onView={setLayout}
+            />
+          )}
+        </div>
       </main>
 
       <footer className="mx-auto w-full max-w-[1320px] px-4 pt-4 pb-10 text-center text-xs text-muted-foreground sm:px-6">
