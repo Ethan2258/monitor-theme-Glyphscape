@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 
+import { recordNodesSnapshot } from "./admin.ts"
 import { whenStill } from "./still.ts"
 
 export type Metrics = {
@@ -249,9 +250,11 @@ export function useNodes() {
     let epoch = 0
     const fetchOnce = () => {
       const started = epoch
-      return api<{ nodes: Node[] }>("/nodes")
+      return api<{ nodes: Node[]; admin?: boolean }>("/nodes")
         .then((d) => {
-          if (started === epoch) receive(d.nodes)
+          if (started !== epoch) return
+          recordNodesSnapshot(d.nodes, d.admin)
+          receive(d.nodes)
         })
         .catch((e: Error) => {
           if (started !== epoch) return
@@ -301,10 +304,11 @@ export function useNodes() {
       opened.onmessage = (event) => {
         decoded = decoded
           .then(async () => {
-            const nodes = JSON.parse(await frameText(event.data)).nodes
+            const frame = JSON.parse(await frameText(event.data)) as { nodes: Node[]; admin?: boolean }
             if (opened.readyState !== WebSocket.OPEN) return
             watch()
-            receive(nodes)
+            recordNodesSnapshot(frame.nodes, frame.admin)
+            receive(frame.nodes)
             // The stream has returned; the poll was only covering for it.
             if (poll) {
               clearInterval(poll)

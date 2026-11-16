@@ -338,40 +338,10 @@
   transition: none !important;
 }
 
-@view-transition {
-  navigation: auto;
-}
-
-/* Leaving the public page for `/admin/` (or returning to it): dissolve the
-   scene and foreground smoothly while blending `--background` toward the admin
-   panel's own surface so the page switch does not hard-cut. */
-:root.leaving-admin {
-  transition: --background 240ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-:root.leaving-admin:root:not(.dark) {
-  --background: oklch(1 0 0);
-}
-:root.leaving-admin:root.dark {
-  --background: oklch(0.129 0.042 264.695);
-}
-:root.leaving-admin .pond,
-:root.leaving-admin .realm,
-:root.leaving-admin .isolate:has(> .realm:not([hidden]))::after {
-  opacity: 0;
-  transition: opacity 200ms ease-out;
-}
-:root.leaving-admin .isolate > :not(.pond):not(.realm),
-:root.leaving-admin main,
-:root.leaving-admin footer {
-  opacity: 0;
-  transform: translateY(-6px) scale(0.992);
-  transition:
-    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
-  pointer-events: none;
-}
-:root.leaving-admin .view-enter {
-  animation: none;
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 160ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes menu-in {
@@ -402,13 +372,8 @@
   .view-enter {
     animation: none;
   }
-  :root.leaving-admin,
-  :root.leaving-admin .pond,
-  :root.leaving-admin .realm,
-  :root.leaving-admin .isolate:has(> .realm:not([hidden]))::after,
-  :root.leaving-admin .isolate > :not(.pond):not(.realm),
-  :root.leaving-admin main,
-  :root.leaving-admin footer {
-    transition: none;
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms;
   }
 }

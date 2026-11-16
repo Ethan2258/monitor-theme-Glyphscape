@@ -11,11 +11,11 @@ import { Realm } from "@/components/Realm"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { openAdmin, preloadAdmin, recordMeSnapshot } from "@/lib/admin"
 import { api, useNodes } from "@/lib/api"
 import { DEFAULTS, loadConfig, type Config } from "@/lib/config"
 import { isSortKey, narrow, NO_FILTERS, type Filters } from "@/lib/filter"
 import { applyPalette, applyScene, transitionPalette } from "@/lib/palette"
-import { stir } from "@/lib/pond"
 import { useRates } from "@/lib/rates"
 
 const WRAITH_ICON =
@@ -36,7 +36,7 @@ const HAS_SITE_ICON =
 
 // `history_days` is absent from hubs predating the hourly tier, which kept a
 // week for anonymous callers.
-type Me = { authed: boolean; github: boolean; site_name: string; public_page: boolean; history_days?: number }
+type Me = { authed: boolean; github: boolean; site_name: string; public_page: boolean; history_days?: number; site?: string }
 
 // Split out because recharts is most of this bundle and the list page draws no
 // chart, with the rest fetched immediately after it paints.
@@ -202,22 +202,6 @@ export default function App() {
   const rates = useRates(settings.live_rates)
   const { nodes, error, closed } = useNodes()
   const [open, go] = useNodeRoute()
-  const adminTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => {
-    const clear = () => {
-      if (adminTimer.current) {
-        clearTimeout(adminTimer.current)
-        adminTimer.current = null
-      }
-      document.documentElement.classList.remove("leaving-admin")
-    }
-    clear()
-    addEventListener("pageshow", clear)
-    return () => {
-      removeEventListener("pageshow", clear)
-      clear()
-    }
-  }, [])
   // What the list is narrowed to, held here so it survives a visit to a node's
   // page. The order is the visitor's preference and outlives the tab.
   const [filters, setFilters] = useState<Filters>(() => {
@@ -231,7 +215,11 @@ export default function App() {
 
   const loadMe = useCallback(() => {
     return api<Me>("/me")
-      .then((next) => { setMe(next); setMeError("") })
+      .then((next) => {
+        recordMeSnapshot(next)
+        setMe(next)
+        setMeError("")
+      })
       .catch((e: Error) => setMeError(e.message))
   }, [])
 
@@ -240,6 +228,7 @@ export default function App() {
     // Requested alongside /me, not after it. It never rejects.
     void loadConfig().then(setConfig)
     void loadDetail()
+    preloadAdmin()
   }, [loadMe])
 
   // The status page was closed while this tab was open: re-query, and the
@@ -308,20 +297,8 @@ export default function App() {
           </button>
           <div data-pond-avoid="" data-sky-dim="" className="flex items-center gap-1">
             <a
-              href="/admin/"
-              onClick={(e) => {
-                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
-                if (matchMedia("(prefers-reduced-motion: reduce)").matches) return
-                e.preventDefault()
-                const box = e.currentTarget.getBoundingClientRect()
-                stir({ x: box.left + box.width / 2, y: box.top + box.height / 2 })
-                void fetch("/admin/", { credentials: "same-origin" }).catch(() => {})
-                document.documentElement.classList.add("leaving-admin")
-                if (adminTimer.current) clearTimeout(adminTimer.current)
-                adminTimer.current = setTimeout(() => {
-                  location.href = "/admin/"
-                }, 220)
-              }}
+              href="/admin/nodes"
+              onClick={openAdmin}
               className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               <DoorIcon className="size-4" />
