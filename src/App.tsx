@@ -3,17 +3,18 @@ import { flushSync } from "react-dom"
 import { DoorIcon, RippleIcon } from "@/components/icons"
 import { ThemeMenu, type ThemeChoice } from "@/components/ThemeMenu"
 
-import { Hero } from "@/components/Hero"
+import { Hero, type SceneChoice } from "@/components/Hero"
 import { NodeHead } from "@/components/NodeCard"
 import { NodeList } from "@/components/NodeList"
 import { Pond } from "@/components/Pond"
+import { Realm } from "@/components/Realm"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, useNodes } from "@/lib/api"
 import { DEFAULTS, loadConfig, type Config } from "@/lib/config"
 import { isSortKey, narrow, NO_FILTERS, type Filters } from "@/lib/filter"
-import { applyPalette, transitionPalette } from "@/lib/palette"
+import { applyPalette, applyScene, transitionPalette } from "@/lib/palette"
 import { useRates } from "@/lib/rates"
 
 // `history_days` is absent from hubs predating the hourly tier, which kept a
@@ -141,8 +142,35 @@ export default function App() {
   const [meError, setMeError] = useState("")
   const [config, setConfig] = useState<Config | null>(null)
   const settings = config ?? DEFAULTS
-  // The visitor's own switch for the fish, within what the operator allows.
-  const [fish, setFish] = useState(() => stored("inkpond:pond") !== "off")
+  // The scene behind the head of the page: the koi pond or the ghost realm, each
+  // in its own palette. The visitor's own choice, else the operator's default
+  // (as this browser saw it last, until the settings arrive). Put away, the
+  // scene's palette stays.
+  const [shown, setShown] = useState(() => stored("inkpond:pond") !== "off")
+  const [pickedScene, setPickedScene] = useState(() => stored("inkpond:scene"))
+  const [siteScene] = useState(() => stored("inkpond:scene-site"))
+  const scene: "pond" | "wraith" =
+    pickedScene === "pond" || pickedScene === "wraith" ? pickedScene : (config?.scene ?? (siteScene === "wraith" ? "wraith" : "pond"))
+  useEffect(() => {
+    if (config) store("inkpond:scene-site", config.scene)
+  }, [config])
+  // The first time at once (public/boot.js has painted it already); after that,
+  // blended, as a change of light and dark is.
+  const sceneSeen = useRef(false)
+  useEffect(() => {
+    applyScene(scene === "wraith", sceneSeen.current)
+    sceneSeen.current = true
+  }, [scene])
+  const pickScene = (choice: SceneChoice) => {
+    if (choice === "off") {
+      store("inkpond:pond", "off")
+      return setShown(false)
+    }
+    store("inkpond:pond", "on")
+    store("inkpond:scene", choice)
+    setShown(true)
+    setPickedScene(choice)
+  }
   const rates = useRates(settings.live_rates)
   const { nodes, error, closed } = useNodes()
   const [open, go] = useNodeRoute()
@@ -195,16 +223,17 @@ export default function App() {
     document.title = [selected?.name, me?.site_name || "Monitor"].filter(Boolean).join(" · ")
   }, [selected?.name, me?.site_name])
 
-  // The pond waits for the settings, so the operator's choice of how many fish
-  // does not restock it a moment after it fills. It is the first thing in the
-  // water whatever page is showing, so moving between them keeps the same fish.
-  const pond = config?.pond && fish && <Pond feed={config.pond_feed} fish={config.pond_fish} />
+  // The scene waits for the settings, so the operator's choice of scene and of
+  // how many fish does not change it a moment after it starts. It is the first
+  // thing at the head of the page whatever page is showing, so moving between
+  // them keeps the same fish, or the same ghosts.
+  const pond = config?.pond && shown && (scene === "wraith" ? <Realm /> : <Pond feed={config.pond_feed} fish={config.pond_fish} />)
 
   if (!me) return (
     <div className="relative isolate min-h-svh">
       {pond}
       <div className="relative grid min-h-svh place-items-center p-6 text-sm text-muted-foreground">
-        {meError ? <div data-pond-avoid="" className="space-y-3 text-center"><p role="alert">加载失败：{meError}</p><Button onClick={loadMe}>重试</Button></div> : <span data-pond-avoid="">加载中…</span>}
+        {meError ? <div data-pond-avoid="" data-sky-avoid="" className="space-y-3 text-center"><p role="alert">加载失败：{meError}</p><Button onClick={loadMe}>重试</Button></div> : <span data-pond-avoid="" data-sky-avoid="">加载中…</span>}
       </div>
     </div>
   )
@@ -217,7 +246,8 @@ export default function App() {
 
   return (
     <div className="flex min-h-svh flex-col">
-      {/* The water: the header and the head of the page, with the fish in it. */}
+      {/* The head of the page, with its scene behind it: the header, then the
+          overview or a node's name. */}
       <div className="relative isolate">
         {pond}
         <header className="relative z-20 mx-auto flex w-full max-w-[1320px] items-center gap-1 px-4 py-4 sm:px-6">
@@ -225,13 +255,14 @@ export default function App() {
               an operator who uploads one replaces /favicon.svg, and this follows. */}
           <button
             data-pond-avoid=""
+            data-sky-dim=""
             className="mr-auto flex min-w-0 items-center gap-2.5 font-semibold transition-opacity hover:opacity-70"
             onClick={() => go(null)}
           >
             <img src="/favicon.svg" alt="" className="size-5 shrink-0" />
             <span className="truncate text-[15px]">{me.site_name || "Monitor"}</span>
           </button>
-          <div data-pond-avoid="" className="flex items-center gap-2">
+          <div data-pond-avoid="" data-sky-dim="" className="flex items-center gap-2">
             <a
               href="/admin/"
               className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
@@ -269,7 +300,7 @@ export default function App() {
             cost={settings.show_price && settings.show_cost && sorted.some((n) => n.price > 0)}
             rates={rates}
             primary={primary}
-            fish={config.pond ? { on: fish, toggle: () => { store("inkpond:pond", fish ? "off" : "on"); setFish(!fish) } } : null}
+            scenes={config.pond ? { choice: shown ? scene : "off", scene, pick: pickScene } : null}
           />
         )}
       </div>
@@ -331,6 +362,9 @@ export default function App() {
           <span className="mx-1.5 opacity-50">·</span>
           锦鲤来自{" "}
           <a className="hover:text-foreground" href="https://github.com/stqfdyr/ascii-pond" target="_blank" rel="noreferrer">ascii-pond</a>
+          <span className="mx-1.5 opacity-50">·</span>
+          幽灵来自{" "}
+          <a className="hover:text-foreground" href="https://github.com/Ethan2258/ascii-ghost" target="_blank" rel="noreferrer">ascii-ghost</a>
         </p>
       </footer>
     </div>

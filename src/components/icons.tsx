@@ -32,6 +32,23 @@ const Dot = ({ x, y, r = 1.15 }: { x: number; y: number; r?: number }) => (
   <circle cx={x} cy={y} r={r} fill="currentColor" stroke="none" />
 )
 
+/** A ghost: a dome with a hem of three scallops, two dots for eyes. The realm is out. */
+export const GhostIcon = (p: Props) => (
+  <Icon {...p}>
+    <path d="M6 19.5V11a6 6 0 0 1 12 0v8.5l-2-1.6-2 1.6-2-1.6-2 1.6-2-1.6Z" />
+    <Dot x={9.8} y={11.2} r={1.05} />
+    <Dot x={14.2} y={11.2} r={1.05} />
+  </Icon>
+)
+
+/** The same ghost, struck through: the realm is put away. */
+export const GhostOffIcon = (p: Props) => (
+  <Icon {...p}>
+    <path d="M7.6 6.7A6 6 0 0 1 18 11v4.2M18 19.5l-2-1.6-2 1.6-2-1.6-2 1.6-2-1.6-2 1.6V11c0-.9.2-1.7.5-2.5" />
+    <path d="m3.5 3.5 17 17" />
+  </Icon>
+)
+
 /** A koi from above, tail swept to one side: the pond is out. */
 export const KoiIcon = (p: Props) => (
   <Icon {...p}>

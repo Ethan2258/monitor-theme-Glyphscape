@@ -479,6 +479,7 @@ export function Globe({ markers, selected, onPick }: {
     // a country; it is not a throw of food into the pond behind.
     <div
       data-pond-ignore=""
+      data-sky-ignore=""
       className="relative mx-auto aspect-square w-full max-w-[15rem] sm:max-w-[17rem] lg:max-w-[19rem]"
     >
       <canvas

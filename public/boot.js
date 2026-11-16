@@ -13,4 +13,12 @@
     // Storage is switched off for the site: the system's answer stands.
   }
   if (dark) document.documentElement.classList.add("dark");
+  // The scene's palette likewise: the visitor's choice, else the operator's
+  // default as this browser last saw it, else the koi pond's.
+  try {
+    var scene = localStorage.getItem("inkpond:scene") || localStorage.getItem("inkpond:scene-site");
+    if (scene === "wraith") document.documentElement.classList.add("wraith");
+  } catch (e) {
+    // Storage is switched off for the site: the pond's palette stands.
+  }
 })();

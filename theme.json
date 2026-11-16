@@ -1,8 +1,8 @@
 {
   "name": "墨池 · Inkpond",
   "short": "inkpond",
-  "description": "默认主题的版式，页首一方字符池塘：锦鲤在水里游，读数在纸上；点阵地球仪标出节点所在，价格与剩余价值按实时汇率折成人民币和美元",
-  "version": "1.1.3",
+  "description": "默认主题的版式，页首一片字符场景，可在锦鲤池塘和幽灵鬼域之间切换，各带一套配色；点阵地球仪标出节点所在，价格与剩余价值按实时汇率折成人民币和美元",
+  "version": "1.2.0",
   "author": "Ethan2258",
   "url": "https://github.com/Ethan2258/monitor-theme-inkpond",
   "config": [
@@ -106,26 +106,43 @@
     },
     {
       "type": "title",
-      "label": "池塘"
+      "label": "背景场景"
     },
     {
       "key": "pond",
       "type": "boolean",
-      "label": "显示池塘",
+      "label": "显示背景场景",
       "default": true,
-      "help": "页首水面里游动的字符锦鲤。访客也可以在页头自己收起"
+      "help": "页首的字符场景。访客也可以在总览下方自己切换或收起"
+    },
+    {
+      "key": "scene",
+      "type": "select",
+      "label": "默认场景",
+      "default": "pond",
+      "help": "锦鲤池塘配暖纸暖墨，幽灵鬼域配灰绿的阴天与长夜。访客自己选过之后，以他的选择为准",
+      "options": [
+        {
+          "value": "pond",
+          "label": "锦鲤池塘"
+        },
+        {
+          "value": "wraith",
+          "label": "幽灵鬼域"
+        }
+      ]
     },
     {
       "key": "pond_feed",
       "type": "boolean",
       "label": "允许投喂",
       "default": true,
-      "help": "点击空白水面撒鱼食"
+      "help": "锦鲤池塘里，点击空白水面撒鱼食"
     },
     {
       "key": "pond_fish",
       "type": "select",
-      "label": "鱼的数量",
+      "label": "锦鲤数量",
       "default": "auto",
       "options": [
         {

@@ -1,4 +1,5 @@
 import { setPondTheme, stir } from "@/lib/pond"
+import { setRealmTheme } from "@/lib/realm"
 import { hush } from "@/lib/still"
 
 /**
@@ -32,6 +33,7 @@ export function applyPalette(dark: boolean, animate = false) {
   if (root.classList.contains("dark") === dark) return
   const blend = animate && !reduced.matches
   setPondTheme(dark, blend ? FADE : 0)
+  setRealmTheme(dark, blend ? FADE : 0)
   if (!blend) {
     // At once: every transition held, so nothing fades on its own.
     clearTimeout(fading)
@@ -47,6 +49,24 @@ export function applyPalette(dark: boolean, animate = false) {
   // The root's transition carries the tokens (index.css, `.palette-fade`).
   root.classList.add("palette-fade")
   root.classList.toggle("dark", dark)
+  clearTimeout(fading)
+  fading = setTimeout(() => root.classList.remove("palette-fade"), FADE + 80)
+}
+
+/**
+ * Puts the page in a scene's own palette -- the pond's warm paper and ink, or
+ * the realm's grey-green (the root's `wraith` class, index.css) -- blended over
+ * FADE when `animate`, as a change of light and dark is.
+ */
+export function applyScene(wraith: boolean, animate = false) {
+  if (root.classList.contains("wraith") === wraith) return
+  if (!animate || reduced.matches) {
+    root.classList.toggle("wraith", wraith)
+    return
+  }
+  hush(FADE + 80)
+  root.classList.add("palette-fade")
+  root.classList.toggle("wraith", wraith)
   clearTimeout(fading)
   fading = setTimeout(() => root.classList.remove("palette-fade"), FADE + 80)
 }

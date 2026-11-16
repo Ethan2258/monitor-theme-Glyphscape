@@ -53,7 +53,7 @@ export function Regions({ nodes, selected, onPick }: {
     "inline-flex h-7 items-center gap-1.5 rounded-full border bg-card px-2.5 text-xs shadow-xs transition-colors outline-none hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 
   return (
-    <div data-pond-avoid="" className="flex min-w-0 flex-col items-center gap-4 lg:w-[26rem]">
+    <div data-pond-avoid="" data-sky-ignore="" className="flex min-w-0 flex-col items-center gap-4 lg:w-[26rem]">
       <Globe markers={markers} selected={selected} onPick={onPick} />
       {regions.length > 0 && (
         <div role="group" aria-label="地区" className="flex max-w-[26rem] flex-wrap justify-center gap-1.5">

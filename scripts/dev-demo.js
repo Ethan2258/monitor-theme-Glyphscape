@@ -19,7 +19,7 @@
 (() => {
   const q = new URLSearchParams(location.search)
   if (q.has("reset")) {
-    for (const key of ["theme", "demo:config", "inkpond:mode", "inkpond:pond", "inkpond:sort", "inkpond:view"]) {
+    for (const key of ["theme", "demo:config", "inkpond:mode", "inkpond:pond", "inkpond:scene", "inkpond:scene-site", "inkpond:sort", "inkpond:view"]) {
       localStorage.removeItem(key)
     }
   }

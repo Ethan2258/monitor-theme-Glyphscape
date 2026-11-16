@@ -4,6 +4,7 @@
 |---|---|---|
 | [monitor-theme-default](https://github.com/monitor-probe/monitor-theme-default)，本主题的基础 | `src/` | MIT © 2026 stqfdyr |
 | [ascii-pond](https://github.com/stqfdyr/ascii-pond)，原样内置 | `src/vendor/ascii-pond/` | MIT © 2026 stqfdyr |
+| [ascii-ghost](https://github.com/Ethan2258/ascii-ghost)，原样内置 | `src/vendor/ascii-ghost/` | MIT © 2026 Ethan2258 |
 | [monitor-probe/themes](https://github.com/monitor-probe/themes) 的预览用假 hub，仅本地演示用，不进产物 | `scripts/dev-hub.js` | MIT © 2026 stqfdyr |
 | Natural Earth 1:110m 陆地（经 world-atlas，ISC） | `src/lib/land.ts` | 公有领域 |
 | Geist Mono 字体（经 @fontsource-variable/geist-mono） | 产物 `assets/`，许可见 `GEIST-MONO-LICENSE.txt` | SIL OFL 1.1 |

@@ -328,7 +328,7 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
  */
 export function NodeHead({ node, onBack }: { node: Node; onBack: () => void }) {
   return (
-    <section data-pond-avoid="" data-pond-dim="box" className="relative mx-auto w-full max-w-[1320px] px-4 pt-2 pb-10 sm:px-6 lg:pt-4 lg:pb-12">
+    <section data-pond-avoid="" data-pond-dim="box" data-sky-dim="" className="relative mx-auto w-full max-w-[1320px] px-4 pt-2 pb-10 sm:px-6 lg:pt-4 lg:pb-12 [.isolate:has(>.realm)_&]:pb-32 lg:[.isolate:has(>.realm)_&]:pb-36">
       <button onClick={onBack} className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
         <BackIcon className="size-4" /> 全部节点
       </button>

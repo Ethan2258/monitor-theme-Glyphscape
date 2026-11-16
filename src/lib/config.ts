@@ -14,6 +14,7 @@ export type Config = {
   primary_currency: "CNY" | "USD"
   live_rates: boolean
   pond: boolean
+  scene: "pond" | "wraith"
   pond_feed: boolean
   pond_fish: "auto" | "few" | "many"
 }

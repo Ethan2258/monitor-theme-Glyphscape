@@ -1,4 +1,4 @@
-import { InIcon, KoiIcon, KoiOffIcon, OutIcon } from "@/components/icons"
+import { GhostIcon, GhostOffIcon, InIcon, KoiIcon, KoiOffIcon, OutIcon } from "@/components/icons"
 
 import { daysLeft, deployed } from "@/components/NodeCard"
 import { Regions } from "@/components/Regions"
@@ -113,14 +113,23 @@ function inOrder({ cny, usd, primary }: { cny: number; usd: number; primary: "CN
  * of what has been paid, and what expires next.
  *
  * Every figure is of `nodes`, which is whatever the list below is narrowed to.
- * The block is `data-pond-avoid`: the fish swim round it and fade beneath it.
+ * The block is `data-pond-avoid`: the fish swim round it and fade beneath it;
+ * and `data-sky-dim`: the ghosts drift through it, fading under the text.
  */
-type Fish = { on: boolean; toggle: () => void } | null
+export type SceneChoice = "pond" | "wraith" | "off"
+/** `scene` is the scene in force, shown or not: its icon, struck through, is the one that puts it away. */
+type Scenes = { choice: SceneChoice; scene: "pond" | "wraith"; pick: (choice: SceneChoice) => void } | null
 
-function Overview({ nodes, cost, rates, primary, fish }: {
+const SCENES = [
+  { value: "pond", label: "锦鲤", Icon: KoiIcon },
+  { value: "wraith", label: "幽灵", Icon: GhostIcon },
+  { value: "off", label: "收起", Icon: null },
+] as const
+
+function Overview({ nodes, cost, rates, primary, scenes }: {
   nodes: Node[]
   cost: boolean
-  fish: Fish
+  scenes: Scenes
   rates: Rates
   primary: "CNY" | "USD"
 }) {
@@ -154,7 +163,7 @@ function Overview({ nodes, cost, rates, primary, fish }: {
   const usd = rates.cny.USD
 
   return (
-    <div data-pond-avoid="" data-pond-dim="box" className="min-w-0">
+    <div data-pond-avoid="" data-pond-dim="box" data-sky-dim="" className="min-w-0">
       <p className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
         <span className="inline-flex h-7 items-center gap-2 rounded-full border bg-card/80 px-3 shadow-xs">
           <span className={cn("size-2 rounded-full", offline.length ? "bg-hot" : "bg-online")} />
@@ -227,18 +236,27 @@ function Overview({ nodes, cost, rates, primary, fish }: {
             </>
           )}
         </p>
-        {/* The koi's own switch, here on the water it belongs to rather than
-            in the header beside the page's palette. */}
-        {fish && (
-          <button
-            aria-pressed={fish.on}
-            data-pond-ignore=""
-            onClick={fish.toggle}
-            className="-mr-2.5 inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 transition-colors hover:bg-secondary hover:text-foreground"
-          >
-            {fish.on ? <KoiOffIcon className="size-4" /> : <KoiIcon className="size-4" />}
-            {fish.on ? "收起锦鲤" : "放出锦鲤"}
-          </button>
+        {/* The scene behind the head of the page -- koi or ghosts, or neither --
+            chosen here, on the scene it changes, rather than in the header
+            beside the page's palette. */}
+        {scenes && (
+          <span role="radiogroup" aria-label="背景场景" data-pond-ignore="" data-sky-ignore="" className="-mr-1 inline-flex items-center gap-0.5">
+            {SCENES.map(({ value, label, Icon }) => (
+              <button
+                key={value}
+                role="radio"
+                aria-checked={scenes.choice === value}
+                onClick={() => scenes.pick(value)}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 transition-colors hover:text-foreground",
+                  scenes.choice === value ? "bg-secondary text-foreground" : "hover:bg-secondary",
+                )}
+              >
+                {Icon ? <Icon className="size-4" /> : scenes.scene === "wraith" ? <GhostOffIcon className="size-4" /> : <KoiOffIcon className="size-4" />}
+                {label}
+              </button>
+            ))}
+          </span>
         )}
       </div>
     </div>
@@ -251,9 +269,9 @@ function Overview({ nodes, cost, rates, primary, fish }: {
  * the group tab narrows but the country does not, so another country is always
  * a click away.
  */
-export function Hero({ nodes, scope, region, onRegion, summary, globe, cost, rates, primary, fish }: {
+export function Hero({ nodes, scope, region, onRegion, summary, globe, cost, rates, primary, scenes }: {
   /** The pond's switch, or null where the operator has no pond. */
-  fish: Fish
+  scenes: Scenes
   nodes: Node[]
   scope: Node[]
   region: string | null
@@ -269,11 +287,11 @@ export function Hero({ nodes, scope, region, onRegion, summary, globe, cost, rat
   return (
     <section
       className={cn(
-        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-16 gap-y-10 px-4 pt-4 pb-16 sm:px-6 lg:pt-6 lg:pb-16",
+        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-16 gap-y-10 px-4 pt-4 pb-16 sm:px-6 lg:pt-6 lg:pb-16 [.isolate:has(>.realm)_&]:pb-36 lg:[.isolate:has(>.realm)_&]:pb-40",
         summary && showGlobe && "lg:grid-cols-[minmax(0,1fr)_auto]",
       )}
     >
-      {summary && <Overview nodes={nodes} cost={cost} rates={rates} primary={primary} fish={fish} />}
+      {summary && <Overview nodes={nodes} cost={cost} rates={rates} primary={primary} scenes={scenes} />}
       {showGlobe && <Regions nodes={scope} selected={region} onPick={onRegion} />}
     </section>
   )
