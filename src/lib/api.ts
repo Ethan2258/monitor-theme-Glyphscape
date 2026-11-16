@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 
-import { recordNodesSnapshot } from "./admin.ts"
+import { readNodesSnapshot, recordNodesSnapshot } from "./admin.ts"
 import { whenStill } from "./still.ts"
 
 export type Metrics = {
@@ -212,7 +212,13 @@ const frameText = (data: string | Blob) =>
  * back to polling if it cannot be established.
  */
 export function useNodes() {
-  const [nodes, setNodes] = useState<Node[] | null>(null)
+  const [nodes, setNodes] = useState<Node[] | null>(() => {
+    const cached = readNodesSnapshot<Node>()
+    if (!cached) return null
+    const safe = safeNodes(cached)
+    if (speedHistory.length === 0) sample(safe)
+    return safe
+  })
   const [error, setError] = useState<string | null>(null)
   // Set when the hub answers 401: the status page has been closed to anonymous
   // callers since this tab loaded. The hub also ends the stream, so this surfaces

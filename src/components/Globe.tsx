@@ -100,19 +100,21 @@ const PERIOD = 36
 /** How long after a touch the globe waits before turning by itself again. */
 const REST = 2500
 
-type Colors = { fg: string; globe: string; land: string; marker: string; offline: string; dark: boolean }
+type Colors = { fg: string; globe: string; land: string; marker: string; offline: string; dark: boolean; wraith: boolean }
 
 /** The palette the globe stands in. */
 function readColors(el: Element): Colors {
   const style = getComputedStyle(el)
   const read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback
+  const root = document.documentElement
   return {
     fg: read("--foreground", "#262523"),
     globe: read("--globe", "#ece8e1"),
     land: read("--globe-land", "#3b3936"),
     marker: read("--marker", "#c8623f"),
     offline: read("--offline", "#9a958e"),
-    dark: document.documentElement.classList.contains("dark"),
+    dark: root.classList.contains("dark"),
+    wraith: root.classList.contains("wraith"),
   }
 }
 
@@ -204,8 +206,11 @@ export function Globe({ markers, selected, onPick }: {
 
       // A faint halo round the sphere, then the sphere: paper, a little lighter
       // where the light falls and a little darker towards the rim.
+      const haloColor = colors.dark
+        ? colors.wraith ? "rgba(216,223,220,0.07)" : "rgba(255,247,240,0.07)"
+        : colors.wraith ? "rgba(29,35,33,0.06)" : "rgba(38,37,35,0.06)"
       const halo = ctx.createRadialGradient(cx, cy, r * 0.96, cx, cy, r + PAD)
-      halo.addColorStop(0, colors.dark ? "rgba(255,247,240,0.07)" : "rgba(38,37,35,0.06)")
+      halo.addColorStop(0, haloColor)
       halo.addColorStop(1, "rgba(0,0,0,0)")
       ctx.fillStyle = halo
       ctx.fillRect(0, 0, size, size)
@@ -214,9 +219,12 @@ export function Globe({ markers, selected, onPick }: {
       ctx.arc(cx, cy, r, 0, Math.PI * 2)
       ctx.fillStyle = colors.globe
       ctx.fill()
+      const shadeColor = colors.dark
+        ? "rgba(0,0,0,0.22)"
+        : colors.wraith ? "rgba(29,35,33,0.07)" : "rgba(38,37,35,0.07)"
       const shade = ctx.createRadialGradient(cx, cy, r * 0.82, cx, cy, r)
       shade.addColorStop(0, "rgba(0,0,0,0)")
-      shade.addColorStop(1, colors.dark ? "rgba(0,0,0,0.22)" : "rgba(38,37,35,0.07)")
+      shade.addColorStop(1, shadeColor)
       ctx.fillStyle = shade
       ctx.fill()
 
@@ -374,8 +382,16 @@ export function Globe({ markers, selected, onPick }: {
       // The palette is looked up now and then rather than listened for.
       // At once when the palette has changed, so the globe turns with the page.
       // Every frame while the palette blends (lib/palette.ts), so the globe changes with the page.
-      const blending = document.documentElement.classList.contains("palette-fade")
-      if (blending || frame++ % 20 === 0 || colors.dark !== document.documentElement.classList.contains("dark")) colors = readColors(canvas)
+      const root = document.documentElement
+      const blending = root.classList.contains("palette-fade")
+      if (
+        blending ||
+        frame++ % 20 === 0 ||
+        colors.dark !== root.classList.contains("dark") ||
+        colors.wraith !== root.classList.contains("wraith")
+      ) {
+        colors = readColors(canvas)
+      }
       draw(now)
     }
 

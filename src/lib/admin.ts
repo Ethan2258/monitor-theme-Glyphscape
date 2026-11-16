@@ -9,10 +9,15 @@ type ClickLike = {
 
 type AdminShell = {
   cssHref: string
+  cssText: string
   jsSrc: string
   iconHref: string
   title: string
 }
+
+const ME_KEY = "inkpond:me"
+const NODES_KEY = "inkpond:nodes"
+const CONFIG_KEYS = ["inkpond:config", "inkpond:mode", "inkpond:scene-site"] as const
 
 let preloaded = false
 let shell: AdminShell | null = null
@@ -21,14 +26,73 @@ let nodesSnapshot: { nodes: unknown[]; admin: boolean } | null = null
 let unmountHome: (() => void) | null = null
 let transitioning = false
 
-/** Records the latest `/api/me` response so `/admin/` can mount without waiting on it. */
-export function recordMeSnapshot(me: unknown) {
-  meSnapshot = me
+function readSession<T>(key: string): T | null {
+  try {
+    const raw = typeof sessionStorage !== "undefined" ? sessionStorage.getItem(key) : null
+    return raw ? (JSON.parse(raw) as T) : null
+  } catch {
+    return null
+  }
 }
 
-/** Records the latest `/api/nodes` payload when it includes `admin`, matching `/admin/`'s view. */
+function writeSession(key: string, value: unknown) {
+  try {
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Storage may be disabled for the site.
+  }
+}
+
+function removeSession(key: string) {
+  try {
+    if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(key)
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+function clearThemeCache() {
+  try {
+    if (typeof localStorage === "undefined") return
+    for (const key of CONFIG_KEYS) localStorage.removeItem(key)
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+function clearSnapshots(nodesOnly = false) {
+  nodesSnapshot = null
+  removeSession(NODES_KEY)
+  if (!nodesOnly) {
+    meSnapshot = null
+    removeSession(ME_KEY)
+  }
+}
+
+/** Records the latest `/api/me` response so `/admin/` and navigations can mount without waiting on it. */
+export function recordMeSnapshot(me: unknown) {
+  meSnapshot = me
+  const m = me as { public_page?: boolean; authed?: boolean } | null
+  if (m && (m.public_page || m.authed)) writeSession(ME_KEY, me)
+  else removeSession(ME_KEY)
+}
+
+/** Returns the in-memory or session-cached `/api/me` response, if any. */
+export function readMeSnapshot<T>(): T | null {
+  return (meSnapshot as T | null) ?? readSession<T>(ME_KEY)
+}
+
+/** Records the latest `/api/nodes` payload for `/admin/` handoff and immediate return mounts. */
 export function recordNodesSnapshot(nodes: unknown[], admin?: boolean) {
   if (typeof admin === "boolean") nodesSnapshot = { nodes, admin }
+  writeSession(NODES_KEY, nodes)
+}
+
+/** Returns the in-memory or session-cached node list, if any. */
+export function readNodesSnapshot<T>(): T[] | null {
+  if (nodesSnapshot?.nodes) return nodesSnapshot.nodes as T[]
+  const cached = readSession<unknown>(NODES_KEY)
+  return Array.isArray(cached) ? (cached as T[]) : null
 }
 
 /** Registers the root unmount callback from `src/main.tsx`. */
@@ -37,9 +101,9 @@ export function registerHomeUnmount(fn: () => void) {
 }
 
 /**
- * Fetches `/admin/nodes` in the background and preloads its hashed CSS and JS
- * assets while the visitor is still on the status page. Ignored in demo mode
- * where `/admin/nodes` does not return the hub's admin shell.
+ * Fetches `/admin/nodes` in the background, caches its stylesheet text in
+ * memory (avoiding unused `<link rel="preload">` console warnings), and
+ * preloads its hashed entry module while the visitor is still on the status page.
  */
 export function preloadAdmin() {
   if (preloaded || typeof document === "undefined") return
@@ -51,32 +115,42 @@ export function preloadAdmin() {
       const cssHref = doc.querySelector('link[rel="stylesheet"][href^="/admin/assets/"]')?.getAttribute("href")
       const jsSrc = doc.querySelector('script[type="module"][src^="/admin/assets/"]')?.getAttribute("src")
       if (!cssHref || !jsSrc) return
-      shell = {
+      const nextShell: AdminShell = {
         cssHref,
+        cssText: "",
         jsSrc,
         iconHref: doc.querySelector('link[rel="icon"]')?.getAttribute("href") ?? "/admin/favicon.svg",
         title: doc.title || "Monitor 后台",
       }
-      const cssHint = document.createElement("link")
-      cssHint.rel = "preload"
-      cssHint.as = "style"
-      cssHint.crossOrigin = "anonymous"
-      cssHint.href = cssHref
+      shell = nextShell
       const jsHint = document.createElement("link")
       jsHint.rel = "modulepreload"
       jsHint.crossOrigin = "anonymous"
       jsHint.href = jsSrc
-      document.head.append(cssHint, jsHint)
+      document.head.append(jsHint)
+      void fetch(cssHref, { credentials: "same-origin" })
+        .then((cssRes) => (cssRes.ok ? cssRes.text() : ""))
+        .then((text) => {
+          if (text) nextShell.cssText = text
+        })
+        .catch(() => {})
     })
     .catch(() => {})
 }
 
-function loadAdminCss(href: string): Promise<HTMLLinkElement> {
+function loadAdminCss(target: AdminShell): Promise<HTMLElement> {
+  if (target.cssText) {
+    const style = document.createElement("style")
+    style.dataset.adminCss = ""
+    style.textContent = target.cssText
+    document.head.append(style)
+    return Promise.resolve(style)
+  }
   return new Promise((resolve) => {
     const link = document.createElement("link")
     link.rel = "stylesheet"
     link.crossOrigin = "anonymous"
-    link.href = href
+    link.href = target.cssHref
     const timer = setTimeout(() => resolve(link), 1500)
     const done = () => {
       clearTimeout(timer)
@@ -92,28 +166,24 @@ function installFetchSnapshot(): () => void {
   const realFetch = window.fetch.bind(window)
   let usedMe = !meSnapshot
   let usedNodes = !nodesSnapshot
-  if (usedMe && usedNodes) return () => {}
 
-  const restore = () => {
-    if (window.fetch === wrapped) window.fetch = realFetch
-  }
-  const timer = setTimeout(restore, 1500)
+  const timer = setTimeout(() => {
+    usedMe = true
+    usedNodes = true
+  }, 1500)
+
   const wrapped: typeof window.fetch = (input, init) => {
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase()
+    const rawUrl = typeof input === "string" ? input : input instanceof Request ? input.url : String(input)
+    let pathname = ""
+    try {
+      pathname = new URL(rawUrl, location.href).pathname
+    } catch {
+      pathname = rawUrl
+    }
     if (method === "GET") {
-      const rawUrl = typeof input === "string" ? input : input instanceof Request ? input.url : String(input)
-      let pathname = ""
-      try {
-        pathname = new URL(rawUrl, location.href).pathname
-      } catch {
-        pathname = rawUrl
-      }
       if (!usedMe && meSnapshot && pathname === "/api/me") {
         usedMe = true
-        if (usedMe && usedNodes) {
-          clearTimeout(timer)
-          restore()
-        }
         return Promise.resolve(
           new Response(JSON.stringify(meSnapshot), {
             status: 200,
@@ -123,10 +193,6 @@ function installFetchSnapshot(): () => void {
       }
       if (!usedNodes && nodesSnapshot && pathname === "/api/nodes") {
         usedNodes = true
-        if (usedMe && usedNodes) {
-          clearTimeout(timer)
-          restore()
-        }
         return Promise.resolve(
           new Response(JSON.stringify(nodesSnapshot), {
             status: 200,
@@ -134,13 +200,24 @@ function installFetchSnapshot(): () => void {
           }),
         )
       }
+    } else {
+      if (pathname === "/api/auth/logout" || pathname === "/api/logout" || pathname === "/api/auth/login" || pathname === "/api/settings") {
+        clearSnapshots()
+      } else if (pathname === "/api/nodes" || pathname.startsWith("/api/nodes/")) {
+        clearSnapshots(true)
+      } else if (pathname === "/api/themes/inkpond/config") {
+        clearThemeCache()
+      } else if (pathname === "/api/db/restore") {
+        clearSnapshots()
+        clearThemeCache()
+      }
     }
     return realFetch(input, init)
   }
   window.fetch = wrapped
   return () => {
     clearTimeout(timer)
-    restore()
+    if (window.fetch === wrapped) window.fetch = realFetch
   }
 }
 
@@ -187,14 +264,16 @@ export function openAdmin(e: ClickLike) {
 
   const target = shell
   const unmount = unmountHome
+  // Keep `@view-transition { navigation: auto; }` active inside `/admin/` so
+  // clicking "状态面板" (`<a href="/">`) transitions smoothly back to `/`.
   const vtStyle = document.createElement("style")
   vtStyle.textContent =
-    "::view-transition-old(root),::view-transition-new(root){animation-duration:160ms;animation-timing-function:cubic-bezier(0.22,1,0.36,1)}"
+    "@view-transition{navigation:auto;}::view-transition-old(root),::view-transition-new(root){animation-duration:160ms;animation-timing-function:cubic-bezier(0.22,1,0.36,1)}"
 
   const handoff = async () => {
     const restoreFetch = installFetchSnapshot()
     try {
-      const adminCss = await loadAdminCss(target.cssHref)
+      const adminCss = await loadAdminCss(target)
       syncAdminThemeClass()
       for (const el of document.querySelectorAll('head style, head link[rel="stylesheet"]')) {
         if (el !== adminCss) el.remove()
@@ -226,13 +305,8 @@ export function openAdmin(e: ClickLike) {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches
   if (!reduced && typeof document.startViewTransition === "function") {
     try {
-      const vt = document.startViewTransition(handoff)
-      void vt.finished.then(
-        () => vtStyle.remove(),
-        () => vtStyle.remove(),
-      )
+      document.startViewTransition(handoff)
     } catch {
-      vtStyle.remove()
       void handoff()
     }
   } else {

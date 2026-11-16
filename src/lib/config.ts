@@ -57,6 +57,20 @@ const pick = (saved: Record<string, unknown>) =>
 /** What the page shows until the hub's answer arrives, and whenever it does not. */
 export const DEFAULTS = pick({})
 
+const CACHE_KEY = "inkpond:config"
+
+/** Last validated settings saved in this browser, for immediate mount across navigations. */
+export function cachedConfig(): Config | null {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(CACHE_KEY) : null
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === "object" ? pick(parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * The operator's settings over the defaults declared in theme.json, which the
  * hub does not store. Any failure, a hub predating settings (404) included,
@@ -64,6 +78,14 @@ export const DEFAULTS = pick({})
  */
 export function loadConfig(): Promise<Config> {
   return api<Record<string, unknown>>(`/themes/${manifest.short}/config`)
-    .then((saved) => pick(saved && typeof saved === "object" ? saved : {}))
-    .catch(() => DEFAULTS)
+    .then((saved) => {
+      const cfg = pick(saved && typeof saved === "object" ? saved : {})
+      try {
+        if (typeof localStorage !== "undefined") localStorage.setItem(CACHE_KEY, JSON.stringify(cfg))
+      } catch {
+        // Storage may be disabled for the site.
+      }
+      return cfg
+    })
+    .catch(() => cachedConfig() ?? DEFAULTS)
 }

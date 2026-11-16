@@ -11,9 +11,9 @@ import { Realm } from "@/components/Realm"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { openAdmin, preloadAdmin, recordMeSnapshot } from "@/lib/admin"
+import { openAdmin, preloadAdmin, readMeSnapshot, recordMeSnapshot } from "@/lib/admin"
 import { api, useNodes } from "@/lib/api"
-import { DEFAULTS, loadConfig, type Config } from "@/lib/config"
+import { cachedConfig, DEFAULTS, loadConfig, type Config } from "@/lib/config"
 import { isSortKey, narrow, NO_FILTERS, type Filters } from "@/lib/filter"
 import { applyPalette, applyScene, transitionPalette } from "@/lib/palette"
 import { useRates } from "@/lib/rates"
@@ -33,6 +33,14 @@ const HAS_SITE_ICON =
   INITIAL_ICON !== "/favicon.svg" &&
   !INITIAL_ICON.startsWith("/favicon.svg?v=d777706a") &&
   !INITIAL_ICON.startsWith("/favicon.svg?v=8c067ea2")
+
+function syncFavicon(href: string) {
+  if (!HAS_SITE_ICON && ICON_LINK && ICON_LINK.getAttribute("href") !== href) ICON_LINK.href = href
+}
+
+function syncTitle(nodeName: string | undefined, siteName: string | undefined) {
+  document.title = [nodeName, siteName || "Monitor"].filter(Boolean).join(" · ")
+}
 
 // `history_days` is absent from hubs predating the hourly tier, which kept a
 // week for anonymous callers.
@@ -155,14 +163,14 @@ function ThemeSwitch({ mode }: { mode: Config["color_mode"] | null }) {
 }
 
 export default function App() {
-  const [me, setMe] = useState<Me | null>(null)
+  const [me, setMe] = useState<Me | null>(() => readMeSnapshot<Me>())
   const [meError, setMeError] = useState("")
-  const [config, setConfig] = useState<Config | null>(null)
+  const [config, setConfig] = useState<Config | null>(cachedConfig)
   const settings = config ?? DEFAULTS
   // The scene behind the head of the page: the koi pond or the ghost realm, each
   // in its own palette. The visitor's own choice, else the operator's default
   // (as this browser saw it last, until the settings arrive). Put away, the
-  // scene's palette stays.
+  // default icon and default palette are restored.
   const [shown, setShown] = useState(() => stored("inkpond:pond") !== "off")
   const [pickedScene, setPickedScene] = useState(() => stored("inkpond:scene"))
   const [siteScene] = useState(() => stored("inkpond:scene-site"))
@@ -171,13 +179,6 @@ export default function App() {
   useEffect(() => {
     if (config) store("inkpond:scene-site", config.scene)
   }, [config])
-  // The first time at once (public/boot.js has painted it already); after that,
-  // blended, as a change of light and dark is.
-  const sceneSeen = useRef(false)
-  useEffect(() => {
-    applyScene(scene === "wraith", sceneSeen.current)
-    sceneSeen.current = true
-  }, [scene])
   const pickScene = (choice: SceneChoice) => {
     if (choice === "off") {
       store("inkpond:pond", "off")
@@ -189,6 +190,13 @@ export default function App() {
     setPickedScene(choice)
   }
   const activeScene: SceneChoice = config?.pond === false || !shown ? "off" : scene
+  // The first time at once (public/boot.js has painted it already); after that,
+  // blended, as a change of light and dark is.
+  const sceneSeen = useRef(false)
+  useEffect(() => {
+    applyScene(activeScene === "wraith", sceneSeen.current)
+    sceneSeen.current = true
+  }, [activeScene])
   const iconHref = HAS_SITE_ICON
     ? INITIAL_ICON
     : activeScene === "wraith"
@@ -196,9 +204,7 @@ export default function App() {
       : activeScene === "off"
         ? DEFAULT_ICON
         : INITIAL_ICON
-  useEffect(() => {
-    if (!HAS_SITE_ICON && ICON_LINK && ICON_LINK.getAttribute("href") !== iconHref) ICON_LINK.href = iconHref
-  }, [iconHref])
+  useEffect(() => syncFavicon(iconHref), [iconHref])
   const rates = useRates(settings.live_rates)
   const { nodes, error, closed } = useNodes()
   const [open, go] = useNodeRoute()
@@ -252,9 +258,7 @@ export default function App() {
     }
   }, [nodes, view.group, view.region, filters])
 
-  useEffect(() => {
-    document.title = [selected?.name, me?.site_name || "Monitor"].filter(Boolean).join(" · ")
-  }, [selected?.name, me?.site_name])
+  useEffect(() => syncTitle(selected?.name, me?.site_name), [selected?.name, me?.site_name])
 
   // The scene waits for the settings, so the operator's choice of scene and of
   // how many fish does not change it a moment after it starts. It is the first
@@ -262,7 +266,7 @@ export default function App() {
   // them keeps the same fish, or the same ghosts.
   const pond = config?.pond && shown && (scene === "wraith" ? <Realm /> : <Pond feed={config.pond_feed} fish={config.pond_fish} />)
 
-  if (!me) return (
+  if (!me || !config) return (
     <div className="relative isolate min-h-svh">
       {pond}
       <div className="relative grid min-h-svh place-items-center p-6 text-sm text-muted-foreground">

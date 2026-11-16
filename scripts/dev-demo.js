@@ -19,12 +19,18 @@
 (() => {
   const q = new URLSearchParams(location.search)
   if (q.has("reset")) {
-    for (const key of ["theme", "demo:config", "inkpond:mode", "inkpond:pond", "inkpond:scene", "inkpond:scene-site", "inkpond:sort", "inkpond:view"]) {
+    for (const key of ["theme", "demo:config", "inkpond:config", "inkpond:mode", "inkpond:pond", "inkpond:scene", "inkpond:scene-site", "inkpond:sort", "inkpond:view"]) {
       localStorage.removeItem(key)
     }
+    try {
+      sessionStorage.clear()
+    } catch {}
   }
   if (q.has("theme")) localStorage.setItem("theme", q.get("theme"))
-  if (q.has("config")) localStorage.setItem("demo:config", q.get("config"))
+  if (q.has("config")) {
+    localStorage.setItem("demo:config", q.get("config"))
+    localStorage.removeItem("inkpond:config")
+  }
 
   const next = window.fetch
   window.fetch = function (input, init) {

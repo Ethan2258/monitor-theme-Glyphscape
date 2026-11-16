@@ -2,7 +2,7 @@
 
 [Monitor](https://github.com/monitor-probe/monitor) 探针的主题：默认主题的版式，页首放一片字符场景——锦鲤池塘或幽灵鬼域，访客可以随时切换。
 
-原名「墨池 · Inkpond」。仓库地址和主题标识 `inkpond` 沿用，已安装的站点直接更新即可，设置不受影响。
+原名「墨池 · Inkpond」。主题标识 `inkpond` 沿用，已安装的站点直接更新即可，设置不受影响。
 
 | 锦鲤池塘 | 幽灵鬼域 |
 |---|---|
@@ -26,7 +26,7 @@
 | 深色 | 暖墨 | 没有月亮的长夜 |
 | 来源 | [ascii-pond](https://github.com/stqfdyr/ascii-pond) | [ascii-ghost](https://github.com/Ethan2258/ascii-ghost) |
 
-站长在设置里选「默认场景」；访客在页头选「锦鲤 / 幽灵 / 收起」，选择记在访客自己的浏览器里，优先于站长的默认。标签页和站名旁的图标随场景切换，收起时换回默认图标（并保留该场景的配色）；站长自己上传的站点图标则不随场景改变。
+站长在设置里选「默认场景」；访客在页头选「锦鲤 / 幽灵 / 收起」，选择记在访客自己的浏览器里，优先于站长的默认。标签页和站名旁的图标随场景切换，收起时换回默认图标与默认配色；站长自己上传的站点图标则不随场景改变。
 
 ![幽灵鬼域，深色](screenshots/scene-wraith-dark.png)
 
@@ -35,10 +35,10 @@
 在 hub 面板「主题」页填本仓库地址，点「从 GitHub 安装」：
 
 ```text
-https://github.com/Ethan2258/monitor-theme-inkpond
+https://github.com/Ethan2258/monitor-theme-Glyphscape
 ```
 
-或者从 [Releases](https://github.com/Ethan2258/monitor-theme-inkpond/releases/latest) 下载 `theme.tar.gz`（不是 Source code），在同一页上传。之后的新版本可以在主题卡片上一键更新。
+或者从 [Releases](https://github.com/Ethan2258/monitor-theme-Glyphscape/releases/latest) 下载 `theme.tar.gz`（不是 Source code），在同一页上传。之后的新版本可以在主题卡片上一键更新。
 
 ## 设置
 

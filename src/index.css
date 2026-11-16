@@ -338,6 +338,10 @@
   transition: none !important;
 }
 
+@view-transition {
+  navigation: auto;
+}
+
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: 160ms;
