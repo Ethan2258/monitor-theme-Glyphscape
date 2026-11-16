@@ -4,16 +4,31 @@
 
 原名「墨池 · Inkpond」。仓库地址和主题标识 `inkpond` 沿用，已安装的站点直接更新即可，设置不受影响。
 
-![预览](preview.png)
+| 锦鲤池塘 | 幽灵鬼域 |
+|---|---|
+| ![锦鲤池塘场景](screenshots/scene-pond.png) | ![幽灵鬼域场景](screenshots/scene-wraith.png) |
 
 - **场景在页首，两种可切换。** 字符锦鲤只在页面顶部那片水里游，或者换成幽灵在坟地上空飘；总览和地球仪直接浮在上面，鱼和幽灵经过文字下方会自动变淡；往下是实心的节点卡片，读数不受干扰。
 - **每个场景一套配色**：锦鲤池塘是暖纸与暖墨，幽灵鬼域是灰绿的阴天与长夜。站长在设置里选默认场景，访客在总览下方选「锦鲤 / 幽灵 / 收起」，切换时颜色平滑渐变。
-- **点阵地球仪**：陆地是细密的墨点，节点是赤陶色的珠子，可拖动；点珠子或下面的地区标签即按地区筛选。
+- **点阵地球仪**：陆地是细密的墨点，节点是彩色的珠子（锦鲤场景里是赤陶色，幽灵场景里是冷蓝色），可拖动；点珠子或下面的地区标签即按地区筛选。
 - **价格只算人民币和美元**：总览显示月均支出和剩余价值（主要货币在上、另一种在下），汇率每天自动更新（同时向三个公开源取，用日期最新的一份，打开着的页面每小时检查一次）；卡片上以人民币或美元标价，其他货币折算后显示，原价在悬停提示里。
 - **深浅色切换**：整页颜色在半秒多里平滑渐变，场景同步换色（幽灵鬼域逐帧混色，池塘淡入新配色），鱼和幽灵照常游动；池塘里还会荡开三圈字符涟漪。
 - **详情页**：在线率条、CPU 峰值带、内存与 Swap、网络速率、硬盘、连接与进程，以及带削峰和探测开关的延迟图。
 - **状态筛选**：节点标题旁有「离线 / 流量预警 / 即将到期」快捷筛选（站长登录后还有「不公开」），只显示有节点的那几项；离线节点的卡片带红边，中间标出离线。
 - 默认主题的功能都在：分组、深浅色、公开备注、离线时长、到期天数、旧版 hub 兼容。
+
+## 两种场景
+
+| | 锦鲤池塘 | 幽灵鬼域 |
+|---|---|---|
+| 场景 | 字符锦鲤在页首水里游，点空白水面可以撒鱼食 | 幽灵在坟地上空飘，鼠标停住时会围过来，点一下会被吓散 |
+| 浅色 | 暖纸 | 雾白的灰绿阴天 |
+| 深色 | 暖墨 | 没有月亮的长夜 |
+| 来源 | [ascii-pond](https://github.com/stqfdyr/ascii-pond) | [ascii-ghost](https://github.com/Ethan2258/ascii-ghost) |
+
+站长在设置里选「默认场景」；访客在总览右下角选「锦鲤 / 幽灵 / 收起」，选择记在访客自己的浏览器里，优先于站长的默认。收起时保留该场景的配色。
+
+![幽灵鬼域，深色](screenshots/scene-wraith-dark.png)
 
 ## 安装
 
@@ -64,4 +79,4 @@ npm run build && npm run lint && npm test
 
 ## 许可
 
-MIT，见 [LICENSE](LICENSE)。基于 [monitor-theme-default](https://github.com/monitor-probe/monitor-theme-default)，锦鲤来自 [ascii-pond](https://github.com/stqfdyr/ascii-pond)，其余见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+MIT，见 [LICENSE](LICENSE)。基于 [monitor-theme-default](https://github.com/monitor-probe/monitor-theme-default)，锦鲤来自 [ascii-pond](https://github.com/stqfdyr/ascii-pond)，幽灵来自 [ascii-ghost](https://github.com/Ethan2258/ascii-ghost)，其余见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
