@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { flushSync } from "react-dom"
-import { DoorIcon, GhostIcon, GhostOffIcon, KoiIcon, KoiOffIcon, RippleIcon } from "@/components/icons"
-import { ThemeMenu, type ThemeChoice } from "@/components/ThemeMenu"
+import { DoorIcon, RippleIcon } from "@/components/icons"
+import { SceneMenu, ThemeMenu, type SceneChoice, type ThemeChoice } from "@/components/ThemeMenu"
 
 import { Hero } from "@/components/Hero"
 import { NodeHead } from "@/components/NodeCard"
@@ -16,15 +16,6 @@ import { DEFAULTS, loadConfig, type Config } from "@/lib/config"
 import { isSortKey, narrow, NO_FILTERS, type Filters } from "@/lib/filter"
 import { applyPalette, applyScene, transitionPalette } from "@/lib/palette"
 import { useRates } from "@/lib/rates"
-import { cn } from "@/lib/utils"
-
-type SceneChoice = "pond" | "wraith" | "off"
-
-const SCENES = [
-  { value: "pond", label: "锦鲤", Icon: KoiIcon },
-  { value: "wraith", label: "幽灵", Icon: GhostIcon },
-  { value: "off", label: "收起", Icon: null },
-] as const
 
 const WRAITH_ICON =
   'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="%23101114"/><path d="M7.5 14.5a8.5 8.5 0 0 1 17 0V27l-2.83-2.1-2.84 2.1-2.83-2.1-2.83 2.1-2.84-2.1L7.5 27Z" fill="%23e9ebf0"/><ellipse cx="12.8" cy="14" rx="1.9" ry="2.7" fill="%23101114"/><ellipse cx="19.2" cy="14" rx="1.9" ry="2.7" fill="%23101114"/><ellipse cx="16" cy="19.6" rx="1.3" ry="2" fill="%23101114"/></svg>'
@@ -298,39 +289,7 @@ export default function App() {
             <img src={iconHref} alt="" className="size-5 shrink-0" />
             <span className="truncate text-[15px]">{me.site_name || "Monitor"}</span>
           </button>
-          <div data-pond-avoid="" data-sky-dim="" className="flex items-center gap-2">
-            {config?.pond && (
-              <>
-                <span
-                  role="radiogroup"
-                  aria-label="背景场景"
-                  data-pond-ignore=""
-                  data-sky-ignore=""
-                  className="inline-flex items-center gap-0.5 text-sm text-muted-foreground"
-                >
-                  {SCENES.map(({ value, label, Icon }) => {
-                    const active = (shown ? scene : "off") === value
-                    return (
-                      <button
-                        key={value}
-                        role="radio"
-                        aria-checked={active}
-                        title={label}
-                        onClick={() => pickScene(value)}
-                        className={cn(
-                          "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 transition-colors hover:text-foreground",
-                          active ? "bg-secondary text-foreground" : "hover:bg-secondary",
-                        )}
-                      >
-                        {Icon ? <Icon className="size-4" /> : scene === "wraith" ? <GhostOffIcon className="size-4" /> : <KoiOffIcon className="size-4" />}
-                        <span className="hidden sm:inline">{label}</span>
-                      </button>
-                    )
-                  })}
-                </span>
-                <span className="h-4 w-px bg-border" aria-hidden />
-              </>
-            )}
+          <div data-pond-avoid="" data-sky-dim="" className="flex items-center gap-1">
             <a
               href="/admin/"
               className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
@@ -338,7 +297,8 @@ export default function App() {
               <DoorIcon className="size-4" />
               {me.authed ? "后台" : "登录"}
             </a>
-            <span className="h-4 w-px bg-border" aria-hidden />
+            <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+            {config?.pond && <SceneMenu choice={shown ? scene : "off"} scene={scene} onPick={pickScene} />}
             <ThemeSwitch mode={config?.color_mode ?? null} />
           </div>
         </header>
