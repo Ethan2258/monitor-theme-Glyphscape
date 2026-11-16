@@ -1,4 +1,4 @@
-import { GhostIcon, GhostOffIcon, InIcon, KoiIcon, KoiOffIcon, OutIcon } from "@/components/icons"
+import { InIcon, OutIcon } from "@/components/icons"
 
 import { daysLeft, deployed } from "@/components/NodeCard"
 import { Regions } from "@/components/Regions"
@@ -116,20 +116,9 @@ function inOrder({ cny, usd, primary }: { cny: number; usd: number; primary: "CN
  * The block is `data-pond-avoid`: the fish swim round it and fade beneath it;
  * and `data-sky-dim`: the ghosts drift through it, fading under the text.
  */
-export type SceneChoice = "pond" | "wraith" | "off"
-/** `scene` is the scene in force, shown or not: its icon, struck through, is the one that puts it away. */
-type Scenes = { choice: SceneChoice; scene: "pond" | "wraith"; pick: (choice: SceneChoice) => void } | null
-
-const SCENES = [
-  { value: "pond", label: "锦鲤", Icon: KoiIcon },
-  { value: "wraith", label: "幽灵", Icon: GhostIcon },
-  { value: "off", label: "收起", Icon: null },
-] as const
-
-function Overview({ nodes, cost, rates, primary, scenes }: {
+function Overview({ nodes, cost, rates, primary }: {
   nodes: Node[]
   cost: boolean
-  scenes: Scenes
   rates: Rates
   primary: "CNY" | "USD"
 }) {
@@ -226,39 +215,13 @@ function Overview({ nodes, cost, rates, primary, scenes }: {
         </Stat>
       </dl>
 
-      <div className="mt-5 flex min-h-7 flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-        <p className="tnum">
-          {cost && (spend.count > 0 || left.count > 0) && (
-            <>
-              汇率 1 USD = ¥{(usd ?? 0).toFixed(4)} · {rates.live ? `${rates.date.slice(5)} 更新` : "参考值，未取到当日汇率"}
-              {[...new Set([...spend.missing, ...left.missing])].length > 0 &&
-                ` · ${[...new Set([...spend.missing, ...left.missing])].join("、")} 无汇率，未计入`}
-            </>
-          )}
+      {cost && (spend.count > 0 || left.count > 0) && (
+        <p className="tnum mt-5 text-[11px] text-muted-foreground">
+          汇率 1 USD = ¥{(usd ?? 0).toFixed(4)} · {rates.live ? `${rates.date.slice(5)} 更新` : "参考值，未取到当日汇率"}
+          {[...new Set([...spend.missing, ...left.missing])].length > 0 &&
+            ` · ${[...new Set([...spend.missing, ...left.missing])].join("、")} 无汇率，未计入`}
         </p>
-        {/* The scene behind the head of the page -- koi or ghosts, or neither --
-            chosen here, on the scene it changes, rather than in the header
-            beside the page's palette. */}
-        {scenes && (
-          <span role="radiogroup" aria-label="背景场景" data-pond-ignore="" data-sky-ignore="" className="-mr-1 inline-flex items-center gap-0.5">
-            {SCENES.map(({ value, label, Icon }) => (
-              <button
-                key={value}
-                role="radio"
-                aria-checked={scenes.choice === value}
-                onClick={() => scenes.pick(value)}
-                className={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 transition-colors hover:text-foreground",
-                  scenes.choice === value ? "bg-secondary text-foreground" : "hover:bg-secondary",
-                )}
-              >
-                {Icon ? <Icon className="size-4" /> : scenes.scene === "wraith" ? <GhostOffIcon className="size-4" /> : <KoiOffIcon className="size-4" />}
-                {label}
-              </button>
-            ))}
-          </span>
-        )}
-      </div>
+      )}
     </div>
   )
 }
@@ -269,9 +232,7 @@ function Overview({ nodes, cost, rates, primary, scenes }: {
  * the group tab narrows but the country does not, so another country is always
  * a click away.
  */
-export function Hero({ nodes, scope, region, onRegion, summary, globe, cost, rates, primary, scenes }: {
-  /** The pond's switch, or null where the operator has no pond. */
-  scenes: Scenes
+export function Hero({ nodes, scope, region, onRegion, summary, globe, cost, rates, primary }: {
   nodes: Node[]
   scope: Node[]
   region: string | null
@@ -291,7 +252,7 @@ export function Hero({ nodes, scope, region, onRegion, summary, globe, cost, rat
         summary && showGlobe && "lg:grid-cols-[minmax(0,1fr)_auto]",
       )}
     >
-      {summary && <Overview nodes={nodes} cost={cost} rates={rates} primary={primary} scenes={scenes} />}
+      {summary && <Overview nodes={nodes} cost={cost} rates={rates} primary={primary} />}
       {showGlobe && <Regions nodes={scope} selected={region} onPick={onRegion} />}
     </section>
   )

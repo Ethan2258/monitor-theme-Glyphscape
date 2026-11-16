@@ -1,9 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { flushSync } from "react-dom"
-import { DoorIcon, RippleIcon } from "@/components/icons"
+import { DoorIcon, GhostIcon, GhostOffIcon, KoiIcon, KoiOffIcon, RippleIcon } from "@/components/icons"
 import { ThemeMenu, type ThemeChoice } from "@/components/ThemeMenu"
 
-import { Hero, type SceneChoice } from "@/components/Hero"
+import { Hero } from "@/components/Hero"
 import { NodeHead } from "@/components/NodeCard"
 import { NodeList } from "@/components/NodeList"
 import { Pond } from "@/components/Pond"
@@ -16,6 +16,31 @@ import { DEFAULTS, loadConfig, type Config } from "@/lib/config"
 import { isSortKey, narrow, NO_FILTERS, type Filters } from "@/lib/filter"
 import { applyPalette, applyScene, transitionPalette } from "@/lib/palette"
 import { useRates } from "@/lib/rates"
+import { cn } from "@/lib/utils"
+
+type SceneChoice = "pond" | "wraith" | "off"
+
+const SCENES = [
+  { value: "pond", label: "锦鲤", Icon: KoiIcon },
+  { value: "wraith", label: "幽灵", Icon: GhostIcon },
+  { value: "off", label: "收起", Icon: null },
+] as const
+
+const WRAITH_ICON =
+  'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="%23101114"/><path d="M7.5 14.5a8.5 8.5 0 0 1 17 0V27l-2.83-2.1-2.84 2.1-2.83-2.1-2.83 2.1-2.84-2.1L7.5 27Z" fill="%23e9ebf0"/><ellipse cx="12.8" cy="14" rx="1.9" ry="2.7" fill="%23101114"/><ellipse cx="19.2" cy="14" rx="1.9" ry="2.7" fill="%23101114"/><ellipse cx="16" cy="19.6" rx="1.3" ry="2" fill="%23101114"/></svg>'
+
+const DEFAULT_ICON =
+  'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><g fill="%238a8a8a"><rect x="2" y="9" width="3" height="5" rx="1"/><rect x="6.5" y="5" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="12" rx="1"/></g></svg>'
+
+const ICON_LINK = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+const INITIAL_ICON = ICON_LINK?.getAttribute("href") ?? "/favicon.svg"
+// The hub stamps href="/favicon.svg" with the first 8 hex digits of the served
+// file's SHA-256 (`?v=d777706a` for our public/favicon.svg). Any other digest
+// means the operator uploaded a site icon in the panel, which stays across scenes.
+const HAS_SITE_ICON =
+  INITIAL_ICON !== "/favicon.svg" &&
+  !INITIAL_ICON.startsWith("/favicon.svg?v=d777706a") &&
+  !INITIAL_ICON.startsWith("/favicon.svg?v=8c067ea2")
 
 // `history_days` is absent from hubs predating the hourly tier, which kept a
 // week for anonymous callers.
@@ -171,6 +196,17 @@ export default function App() {
     setShown(true)
     setPickedScene(choice)
   }
+  const activeScene: SceneChoice = config?.pond === false || !shown ? "off" : scene
+  const iconHref = HAS_SITE_ICON
+    ? INITIAL_ICON
+    : activeScene === "wraith"
+      ? WRAITH_ICON
+      : activeScene === "off"
+        ? DEFAULT_ICON
+        : INITIAL_ICON
+  useEffect(() => {
+    if (!HAS_SITE_ICON && ICON_LINK && ICON_LINK.getAttribute("href") !== iconHref) ICON_LINK.href = iconHref
+  }, [iconHref])
   const rates = useRates(settings.live_rates)
   const { nodes, error, closed } = useNodes()
   const [open, go] = useNodeRoute()
@@ -251,18 +287,50 @@ export default function App() {
       <div className="relative isolate">
         {pond}
         <header className="relative z-20 mx-auto flex w-full max-w-[1320px] items-center gap-1 px-4 py-4 sm:px-6">
-          {/* The site name is the way back to the list. The icon is the hub's:
-              an operator who uploads one replaces /favicon.svg, and this follows. */}
+          {/* The site name is the way back to the list. The icon follows the
+              scene unless the operator has uploaded a site icon in the panel. */}
           <button
             data-pond-avoid=""
             data-sky-dim=""
             className="mr-auto flex min-w-0 items-center gap-2.5 font-semibold transition-opacity hover:opacity-70"
             onClick={() => go(null)}
           >
-            <img src="/favicon.svg" alt="" className="size-5 shrink-0" />
+            <img src={iconHref} alt="" className="size-5 shrink-0" />
             <span className="truncate text-[15px]">{me.site_name || "Monitor"}</span>
           </button>
           <div data-pond-avoid="" data-sky-dim="" className="flex items-center gap-2">
+            {config?.pond && (
+              <>
+                <span
+                  role="radiogroup"
+                  aria-label="背景场景"
+                  data-pond-ignore=""
+                  data-sky-ignore=""
+                  className="inline-flex items-center gap-0.5 text-sm text-muted-foreground"
+                >
+                  {SCENES.map(({ value, label, Icon }) => {
+                    const active = (shown ? scene : "off") === value
+                    return (
+                      <button
+                        key={value}
+                        role="radio"
+                        aria-checked={active}
+                        title={label}
+                        onClick={() => pickScene(value)}
+                        className={cn(
+                          "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 transition-colors hover:text-foreground",
+                          active ? "bg-secondary text-foreground" : "hover:bg-secondary",
+                        )}
+                      >
+                        {Icon ? <Icon className="size-4" /> : scene === "wraith" ? <GhostOffIcon className="size-4" /> : <KoiOffIcon className="size-4" />}
+                        <span className="hidden sm:inline">{label}</span>
+                      </button>
+                    )
+                  })}
+                </span>
+                <span className="h-4 w-px bg-border" aria-hidden />
+              </>
+            )}
             <a
               href="/admin/"
               className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
@@ -300,7 +368,6 @@ export default function App() {
             cost={settings.show_price && settings.show_cost && sorted.some((n) => n.price > 0)}
             rates={rates}
             primary={primary}
-            scenes={config.pond ? { choice: shown ? scene : "off", scene, pick: pickScene } : null}
           />
         )}
       </div>
