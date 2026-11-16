@@ -351,25 +351,13 @@
   }
 }
 
-@keyframes view-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-
 [role="menu"] {
   transform-origin: top right;
   animation: menu-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.view-enter {
-  animation: view-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  [role="menu"],
-  .view-enter {
+  [role="menu"] {
     animation: none;
   }
   ::view-transition-old(root),

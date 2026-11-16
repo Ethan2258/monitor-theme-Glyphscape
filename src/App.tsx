@@ -320,77 +320,73 @@ export default function App() {
           </div>
         )}
 
-        <div key={open ?? "list"} className="view-enter">
-          {open !== null ? (
-            selected ? <NodeHead node={selected} onBack={() => go(null)} /> : <div className="h-28" />
-          ) : !nodes || !config ? (
-            <div className="h-[22rem]" />
-          ) : (
-            <Hero
-              nodes={view.shown}
-              scope={view.inGroup}
-              region={view.region}
-              onRegion={(region) => setFilters({ ...filters, group: view.group, region })}
-              summary={settings.show_summary}
-              globe={settings.show_globe}
-              cost={settings.show_price && settings.show_cost && sorted.some((n) => n.price > 0)}
-              rates={rates}
-              primary={primary}
-            />
-          )}
-        </div>
+        {open !== null ? (
+          selected ? <NodeHead node={selected} onBack={() => go(null)} /> : <div className="h-28" />
+        ) : !nodes || !config ? (
+          <div className="h-[22rem]" />
+        ) : (
+          <Hero
+            nodes={view.shown}
+            scope={view.inGroup}
+            region={view.region}
+            onRegion={(region) => setFilters({ ...filters, group: view.group, region })}
+            summary={settings.show_summary}
+            globe={settings.show_globe}
+            cost={settings.show_price && settings.show_cost && sorted.some((n) => n.price > 0)}
+            rates={rates}
+            primary={primary}
+          />
+        )}
       </div>
 
       <main className="mx-auto w-full max-w-[1320px] flex-1 space-y-5 px-4 pb-10 sm:px-6">
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <div key={open ?? "list"} className="view-enter">
-          {open !== null ? (
-            !nodes ? (
-              <Skeleton className="h-96" />
-            ) : selected ? (
-              <Card className="gap-0 p-4 sm:p-6">
-                <Suspense fallback={<Skeleton className="h-96" />}>
-                  <NodeDetail
-                    node={selected}
-                    historyDays={me.history_days ?? 7}
-                    price={settings.show_price}
-                    rates={rates}
-                    primary={primary}
-                  />
-                </Suspense>
-              </Card>
-            ) : (
-              <p className="py-16 text-center text-sm text-muted-foreground">
-                节点不存在或未公开。<button className="underline" onClick={() => go(null)}>返回列表</button>
-              </p>
-            )
-          ) : !nodes || !config ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-72" />
-              ))}
-            </div>
+        {open !== null ? (
+          !nodes ? (
+            <Skeleton className="h-96" />
+          ) : selected ? (
+            <Card className="gap-0 p-4 sm:p-6">
+              <Suspense fallback={<Skeleton className="h-96" />}>
+                <NodeDetail
+                  node={selected}
+                  historyDays={me.history_days ?? 7}
+                  price={settings.show_price}
+                  rates={rates}
+                  primary={primary}
+                />
+              </Suspense>
+            </Card>
           ) : (
-            <NodeList
-              nodes={sorted}
-              groups={view.groups}
-              ungrouped={view.ungrouped}
-              group={view.group}
-              shown={view.shown}
-              counts={view.counts}
-              filters={filters}
-              onFilters={setFilters}
-              onOpen={go}
-              toolbar={settings.show_toolbar}
-              price={settings.show_price}
-              rates={rates}
-              primary={primary}
-              view={layout}
-              onView={setLayout}
-            />
-          )}
-        </div>
+            <p className="py-16 text-center text-sm text-muted-foreground">
+              节点不存在或未公开。<button className="underline" onClick={() => go(null)}>返回列表</button>
+            </p>
+          )
+        ) : !nodes || !config ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-72" />
+            ))}
+          </div>
+        ) : (
+          <NodeList
+            nodes={sorted}
+            groups={view.groups}
+            ungrouped={view.ungrouped}
+            group={view.group}
+            shown={view.shown}
+            counts={view.counts}
+            filters={filters}
+            onFilters={setFilters}
+            onOpen={go}
+            toolbar={settings.show_toolbar}
+            price={settings.show_price}
+            rates={rates}
+            primary={primary}
+            view={layout}
+            onView={setLayout}
+          />
+        )}
       </main>
 
       <footer className="mx-auto w-full max-w-[1320px] px-4 pt-4 pb-10 text-center text-xs text-muted-foreground sm:px-6">
