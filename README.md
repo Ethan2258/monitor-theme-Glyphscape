@@ -1,6 +1,8 @@
-# 墨池 · Inkpond
+# 字景 · Glyphscape
 
 [Monitor](https://github.com/monitor-probe/monitor) 探针的主题：默认主题的版式，页首放一片字符场景——锦鲤池塘或幽灵鬼域，访客可以随时切换。
+
+原名「墨池 · Inkpond」。仓库地址和主题标识 `inkpond` 沿用，已安装的站点直接更新即可，设置不受影响。
 
 ![预览](preview.png)
 

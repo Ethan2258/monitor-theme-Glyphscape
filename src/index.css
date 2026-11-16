@@ -248,7 +248,7 @@
 }
 
 /* The realm: the head of the page, behind the header and the overview and
-   nowhere else, as the pond is in Inkpond. Its lower edge fades into the page,
+   nowhere else, as the pond is. Its lower edge fades into the page,
    so the graveyard sinks into it rather than ending on a line. */
 .realm {
   position: absolute;

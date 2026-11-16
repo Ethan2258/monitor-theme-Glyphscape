@@ -2,7 +2,7 @@
  * The ghost realm behind the page: ascii-ghost's scene, started on a canvas that
  * fills the window. It paints its own sky, graveyard and fog, and keeps its
  * at the head of the page behind the header and the overview. Its wraiths fade
- * as they pass under text marked `data-sky-dim`, as Inkpond's koi do,
+ * as they pass under text marked `data-sky-dim`, as the pond's koi do,
  * re-measured as the page scrolls.
  */
 
