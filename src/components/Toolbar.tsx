@@ -25,8 +25,8 @@ export function Toolbar({ query, sort, view, onQuery, onSort, onView }: {
   onView: (view: View) => void
 }) {
   return (
-    <div className="ml-auto flex items-center gap-2">
-      <label className="relative">
+    <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+      <label className="relative min-w-0 flex-1 sm:flex-initial">
         <span className="sr-only">搜索节点</span>
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -34,7 +34,7 @@ export function Toolbar({ query, sort, view, onQuery, onSort, onView }: {
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           placeholder="搜索"
-          className={`${FIELD} w-32 pr-2 pl-8 placeholder:text-muted-foreground sm:w-44`}
+          className={`${FIELD} w-full pr-2 pl-8 placeholder:text-muted-foreground sm:w-44`}
         />
       </label>
       <label className="relative">

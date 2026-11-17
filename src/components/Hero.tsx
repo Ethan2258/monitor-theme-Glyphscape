@@ -88,11 +88,11 @@ function Wake({ ids }: { ids: number[] }) {
 }
 
 /** One figure of the row beneath: a label, the figure, and a quieter line under it. */
-function Stat({ label, children, foot, wide = false }: { label: string; children: React.ReactNode; foot?: React.ReactNode; wide?: boolean }) {
+function Stat({ label, children, foot, wide = false, className }: { label: string; children: React.ReactNode; foot?: React.ReactNode; wide?: boolean; className?: string }) {
   return (
     // Two to a row on a phone; above it all in one row, a hairline between each.
     // `wide` takes a share and a half, for a figure that is two figures.
-    <div className={cn("min-w-0 sm:min-w-[8.5rem] sm:border-l sm:pl-5 sm:first:border-l-0 sm:first:pl-0", wide ? "col-span-2 sm:flex-[1.5]" : "sm:flex-1")}>
+    <div className={cn("min-w-0 sm:min-w-[8.5rem] sm:border-l sm:pl-5 sm:first:border-l-0 sm:first:pl-0", wide ? "col-span-2 sm:flex-[1.5]" : "sm:flex-1", className)}>
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="mt-1.5 text-lg/tight font-medium">{children}</dd>
       {foot && <dd className="tnum mt-1 truncate text-xs text-muted-foreground">{foot}</dd>}
@@ -116,11 +116,12 @@ function inOrder({ cny, usd, primary }: { cny: number; usd: number; primary: "CN
  * The block is `data-pond-avoid`: the fish swim round it and fade beneath it;
  * and `data-sky-dim`: the ghosts drift through it, fading under the text.
  */
-function Overview({ nodes, cost, rates, primary }: {
+function Overview({ nodes, cost, rates, primary, onOpen }: {
   nodes: Node[]
   cost: boolean
   rates: Rates
   primary: "CNY" | "USD"
+  onOpen?: (id: number) => void
 }) {
   const online = nodes.filter((n) => n.online)
   const offline = nodes.filter((n) => !n.online && deployed(n))
@@ -163,9 +164,21 @@ function Overview({ nodes, cost, rates, primary }: {
           </span>
         </span>
         {busiest?.metrics && (
-          <span className="min-w-0 truncate">
-            CPU 最高 <span className="text-foreground">{busiest.name}</span>{" "}
-            <span className={cn("tnum", busiest.metrics.cpu >= 90 && "text-hot")}>{busiest.metrics.cpu.toFixed(1)}%</span>
+          <span className="flex min-w-0 max-w-full items-baseline gap-1">
+            <span className="shrink-0">CPU 最高</span>
+            {onOpen ? (
+              <button
+                type="button"
+                onClick={() => onOpen(busiest.id)}
+                className="min-w-0 cursor-pointer truncate text-foreground underline-offset-4 hover:underline"
+                title={`查看 ${busiest.name} 详情`}
+              >
+                {busiest.name}
+              </button>
+            ) : (
+              <span className="min-w-0 truncate text-foreground">{busiest.name}</span>
+            )}
+            <span className={cn("tnum shrink-0", busiest.metrics.cpu >= 90 && "text-hot")}>{busiest.metrics.cpu.toFixed(1)}%</span>
           </span>
         )}
       </p>
@@ -202,6 +215,8 @@ function Overview({ nodes, cost, rates, primary }: {
           </Stat>
         )}
         <Stat
+          wide
+          className="sm:flex-1"
           label="最近到期"
           foot={
             next ? (
@@ -211,7 +226,18 @@ function Overview({ nodes, cost, rates, primary }: {
             ) : "都没有到期日"
           }
         >
-          <span className="block truncate" title={next?.node.name}>{next ? next.node.name : "—"}</span>
+          {next && onOpen ? (
+            <button
+              type="button"
+              onClick={() => onOpen(next.node.id)}
+              className="block max-w-full cursor-pointer truncate text-left underline-offset-4 hover:underline"
+              title={`查看 ${next.node.name} 详情`}
+            >
+              {next.node.name}
+            </button>
+          ) : (
+            <span className="block truncate" title={next?.node.name}>{next ? next.node.name : "—"}</span>
+          )}
         </Stat>
       </dl>
 
@@ -232,11 +258,12 @@ function Overview({ nodes, cost, rates, primary }: {
  * the group tab narrows but the country does not, so another country is always
  * a click away.
  */
-export function Hero({ nodes, scope, region, onRegion, summary, globe, cost, rates, primary }: {
+export function Hero({ nodes, scope, region, onRegion, onOpen, summary, globe, cost, rates, primary }: {
   nodes: Node[]
   scope: Node[]
   region: string | null
   onRegion: (code: string | null) => void
+  onOpen?: (id: number) => void
   summary: boolean
   globe: boolean
   cost: boolean
@@ -248,11 +275,11 @@ export function Hero({ nodes, scope, region, onRegion, summary, globe, cost, rat
   return (
     <section
       className={cn(
-        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-16 gap-y-10 px-4 pt-4 pb-16 sm:px-6 lg:pt-6 lg:pb-16 [.isolate:has(>.realm)_&]:pb-36 lg:[.isolate:has(>.realm)_&]:pb-40",
+        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-16 gap-y-10 px-4 pt-4 pb-16 sm:px-6 lg:pt-6 lg:pb-16 [.isolate:has(>.realm:not([hidden]))_&]:pb-36 lg:[.isolate:has(>.realm:not([hidden]))_&]:pb-40",
         summary && showGlobe && "lg:grid-cols-[minmax(0,1fr)_auto]",
       )}
     >
-      {summary && <Overview nodes={nodes} cost={cost} rates={rates} primary={primary} />}
+      {summary && <Overview nodes={nodes} cost={cost} rates={rates} primary={primary} onOpen={onOpen} />}
       {showGlobe && <Regions nodes={scope} selected={region} onPick={onRegion} />}
     </section>
   )

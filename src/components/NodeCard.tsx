@@ -333,8 +333,10 @@ export function NodeHead({ node, onBack }: { node: Node; onBack: () => void }) {
         <BackIcon className="size-4" /> 全部节点
       </button>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <Country node={node} />
-        <h1 className="min-w-0 truncate text-3xl font-medium tracking-tight sm:text-4xl" title={node.name}>{node.name}</h1>
+        <div className="flex min-w-0 items-center gap-3">
+          <Country node={node} />
+          <h1 className="min-w-0 text-2xl font-medium tracking-tight break-words sm:text-4xl">{node.name}</h1>
+        </div>
         <Status node={node} />
         {node.agent_version && <Badge className="tnum font-normal text-muted-foreground">agent {node.agent_version}</Badge>}
         {node.group && <Badge className="font-normal text-muted-foreground">{node.group}</Badge>}

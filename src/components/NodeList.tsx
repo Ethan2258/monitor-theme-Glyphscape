@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils"
  * tabs once the operator has grouped anything, search and order at its end --
  * and the cards under it.
  */
-export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filters, onFilters, onOpen, toolbar, price, rates, primary, view, onView }: {
+export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filters, onFilters, onOpen, onPrefetch, toolbar, price, rates, primary, view, onView }: {
   /** How many nodes are in each state, of those the group and country leave. */
   counts: Record<Status, number>
   /** Every node, in the operator's order. */
@@ -25,6 +25,7 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
   filters: Filters
   onFilters: (filters: Filters) => void
   onOpen: (id: number) => void
+  onPrefetch?: () => void
   toolbar: boolean
   price: boolean
   rates: Rates
@@ -125,17 +126,17 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
         </p>
       ) : view === "table" ? (
         <>
-          <div className="hidden lg:block">
+          <div className="hidden lg:block" onPointerEnter={onPrefetch} onFocus={onPrefetch}>
             <NodeTable nodes={shown} price={priced} rates={rates} primary={primary} onOpen={onOpen} />
           </div>
-          <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:hidden">
+          <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:hidden" onPointerEnter={onPrefetch} onFocus={onPrefetch}>
             {shown.map((n) => (
               <NodeCard key={n.id} node={n} price={priced} rates={rates} primary={primary} onOpen={() => onOpen(n.id)} />
             ))}
           </div>
         </>
       ) : (
-        <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" onPointerEnter={onPrefetch} onFocus={onPrefetch}>
           {shown.map((n) => (
             <NodeCard key={n.id} node={n} price={priced} rates={rates} primary={primary} onOpen={() => onOpen(n.id)} />
           ))}

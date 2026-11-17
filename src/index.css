@@ -233,9 +233,11 @@
 /* The pond: the water at the head of the page, behind the header and the
    overview and nowhere else. Its lower edge fades into the page, so the fish
    swim off into the paper rather than against a line. */
-.pond {
+.pond,
+.scene-still-pond {
   position: absolute;
   inset: 0;
+  z-index: -1;
   width: 100%;
   height: 100%;
   pointer-events: none;
@@ -244,13 +246,15 @@
 }
 /* In forced-colours mode its glyphs turn into unreadable blocks, and it is decoration. */
 @media (forced-colors: active) {
-  .pond { display: none; }
+  .pond,
+  .scene-still-pond { display: none; }
 }
 
 /* The realm: the head of the page, behind the header and the overview and
    nowhere else, as the pond is. Its lower edge fades into the page,
    so the graveyard sinks into it rather than ending on a line. */
-.realm {
+.realm,
+.scene-still-realm {
   position: absolute;
   inset: 0;
   z-index: -1;
@@ -290,7 +294,8 @@
 }
 /* In forced-colours mode its glyphs turn into unreadable blocks, and it is decoration. */
 @media (forced-colors: active) {
-  .realm { display: none; }
+  .realm,
+  .scene-still-realm { display: none; }
 }
 
 /* The palette change (lib/palette.ts): every colour token is registered as a

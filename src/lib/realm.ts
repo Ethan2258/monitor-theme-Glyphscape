@@ -44,7 +44,10 @@ export function startRealm(canvas: HTMLCanvasElement): () => void {
     sky = mount(canvas, { theme: root.classList.contains("dark") ? "dark" : "light", leftTree: false })
     addEventListener("scroll", remeasure, { passive: true })
     // Layout moves without a scroll too: data arriving, a filter, the globe's chips.
-    poll = setInterval(remeasure, 1000)
+    // Skip work while hidden or scrolled above the fold.
+    poll = setInterval(() => {
+      if (!document.hidden && canvas.getBoundingClientRect().bottom > 0) remeasure()
+    }, 1000)
     remeasure()
   })
   return () => {

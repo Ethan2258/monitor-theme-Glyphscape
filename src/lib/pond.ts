@@ -64,7 +64,7 @@ export function stir(at: { x: number; y: number }) {
 function dimBoxes(canvas: HTMLCanvasElement): Box[] {
   const origin = canvas.getBoundingClientRect()
   const boxes: Box[] = []
-  const range = document.createRange()
+  let range: Range | null = null
   for (const el of document.querySelectorAll("[data-pond-dim]")) {
     // `box`: the whole block, for a block dense enough that a fish anywhere
     // under it would be under something to read.
@@ -73,6 +73,7 @@ function dimBoxes(canvas: HTMLCanvasElement): Box[] {
       if (r.width > 1 && r.height > 1) boxes.push({ left: r.left - origin.left, top: r.top - origin.top, right: r.right - origin.left, bottom: r.bottom - origin.top })
       continue
     }
+    range ??= document.createRange()
     const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
     for (let node; (node = walk.nextNode()); ) {
       if (!node.nodeValue?.trim()) continue

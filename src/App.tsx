@@ -6,8 +6,7 @@ import { SceneMenu, ThemeMenu, type SceneChoice, type ThemeChoice } from "@/comp
 import { Hero } from "@/components/Hero"
 import { NodeHead } from "@/components/NodeCard"
 import { NodeList } from "@/components/NodeList"
-import { Pond } from "@/components/Pond"
-import { Realm } from "@/components/Realm"
+import { SceneStage } from "@/components/SceneStage"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -229,12 +228,22 @@ export default function App() {
       .catch((e: Error) => setMeError(e.message))
   }, [])
 
+  const headRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     loadMe()
     // Requested alongside /me, not after it. It never rejects.
     void loadConfig().then(setConfig)
-    void loadDetail()
-    preloadAdmin()
+    const runIdle = () => {
+      void loadDetail()
+      preloadAdmin()
+    }
+    if (typeof requestIdleCallback === "function") {
+      const id = requestIdleCallback(runIdle, { timeout: 1500 })
+      return () => cancelIdleCallback(id)
+    }
+    const timer = setTimeout(runIdle, 600)
+    return () => clearTimeout(timer)
   }, [loadMe])
 
   // The status page was closed while this tab was open: re-query, and the
@@ -260,15 +269,8 @@ export default function App() {
 
   useEffect(() => syncTitle(selected?.name, me?.site_name), [selected?.name, me?.site_name])
 
-  // The scene waits for the settings, so the operator's choice of scene and of
-  // how many fish does not change it a moment after it starts. It is the first
-  // thing at the head of the page whatever page is showing, so moving between
-  // them keeps the same fish, or the same ghosts.
-  const pond = config?.pond && shown && (scene === "wraith" ? <Realm /> : <Pond feed={config.pond_feed} fish={config.pond_fish} />)
-
   if (!me || !config) return (
     <div className="relative isolate min-h-svh">
-      {pond}
       <div className="relative grid min-h-svh place-items-center p-6 text-sm text-muted-foreground">
         {meError ? <div data-pond-avoid="" data-sky-avoid="" className="space-y-3 text-center"><p role="alert">加载失败：{meError}</p><Button onClick={loadMe}>重试</Button></div> : <span data-pond-avoid="" data-sky-avoid="">加载中…</span>}
       </div>
@@ -285,13 +287,14 @@ export default function App() {
     <div className="flex min-h-svh flex-col">
       {/* The head of the page, with its scene behind it: the header, then the
           overview or a node's name. */}
-      <div className="relative isolate">
-        {pond}
+      <div ref={headRef} className="relative isolate">
+        <SceneStage hostRef={headRef} scene={activeScene} feed={config.pond_feed} fish={config.pond_fish} />
         <header className="relative z-20 mx-auto flex w-full max-w-[1320px] items-center gap-1 px-4 py-4 sm:px-6">
           {/* The site name is the way back to the list. The icon follows the
               scene unless the operator has uploaded a site icon in the panel. */}
           <button
             data-pond-avoid=""
+            data-pond-dim="box"
             data-sky-dim=""
             className="mr-auto flex min-w-0 items-center gap-2.5 font-semibold transition-opacity hover:opacity-70"
             onClick={() => go(null)}
@@ -299,11 +302,13 @@ export default function App() {
             <img src={iconHref} alt="" className="size-5 shrink-0" />
             <span className="truncate text-[15px]">{me.site_name || "Monitor"}</span>
           </button>
-          <div data-pond-avoid="" data-sky-dim="" className="flex items-center gap-1">
+          <div data-pond-avoid="" data-pond-dim="box" data-sky-dim="" className="flex shrink-0 items-center gap-1">
             <a
               href="/admin/nodes"
               onClick={openAdmin}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              onPointerEnter={preloadAdmin}
+              onFocus={preloadAdmin}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm whitespace-nowrap text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               <DoorIcon className="size-4" />
               {me.authed ? "后台" : "登录"}
@@ -334,6 +339,7 @@ export default function App() {
             scope={view.inGroup}
             region={view.region}
             onRegion={(region) => setFilters({ ...filters, group: view.group, region })}
+            onOpen={go}
             summary={settings.show_summary}
             globe={settings.show_globe}
             cost={settings.show_price && settings.show_cost && sorted.some((n) => n.price > 0)}
@@ -383,6 +389,9 @@ export default function App() {
             filters={filters}
             onFilters={setFilters}
             onOpen={go}
+            onPrefetch={() => {
+              void loadDetail()
+            }}
             toolbar={settings.show_toolbar}
             price={settings.show_price}
             rates={rates}
