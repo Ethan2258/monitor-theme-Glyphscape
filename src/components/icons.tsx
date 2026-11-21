@@ -6,6 +6,10 @@ import { memo, type SVGProps } from "react"
  * the pond's grain, the same dot as the globe's land and the ripple's rings.
  * Everything takes the colour of the text around it.
  *
+ * Each sits centred on the grid, measured by its drawn box: an icon whose
+ * shape leans one way (the koi's tail, the moon's stars) is shifted back by a
+ * `translate`, so in a round button it reads as centred.
+ *
  * Each is memoised: a card draws several, and the live figures re-render every
  * card each tick, while an icon's props -- a class name -- never change.
  */
@@ -39,9 +43,11 @@ const Dot = ({ x, y, r = 1.15 }: { x: number; y: number; r?: number }) => (
 export const GhostIcon = memo(function GhostIcon(p: Props) {
   return (
     <Icon {...p}>
-      <path d="M6 19.5V11a6 6 0 0 1 12 0v8.5l-2-1.6-2 1.6-2-1.6-2 1.6-2-1.6Z" />
-      <Dot x={9.8} y={11.2} r={1.05} />
-      <Dot x={14.2} y={11.2} r={1.05} />
+      <g transform="translate(0 -0.25)">
+        <path d="M6 19.5V11a6 6 0 0 1 12 0v8.5l-2-1.6-2 1.6-2-1.6-2 1.6-2-1.6Z" />
+        <Dot x={9.8} y={11.2} r={1.05} />
+        <Dot x={14.2} y={11.2} r={1.05} />
+      </g>
     </Icon>
   )
 })
@@ -60,10 +66,12 @@ export const GhostOffIcon = memo(function GhostOffIcon(p: Props) {
 export const KoiIcon = memo(function KoiIcon(p: Props) {
   return (
     <Icon {...p}>
-      <path d="M4.5 12.2c2.6-4.4 8.2-5.7 12.1-2.6 1 .8 1.8 1.7 2.4 2.6-.6.9-1.4 1.8-2.4 2.6-3.9 3.1-9.5 1.8-12.1-2.6Z" />
-      <path d="M4.5 12.2 2.2 9.6M4.5 12.2l-2.3 2.7" />
-      <path d="M11 9.3c.8 1.7.8 4 0 5.8" opacity={0.55} />
-      <Dot x={16.3} y={11.5} r={0.95} />
+      <g transform="translate(1.4 -0.2)">
+        <path d="M4.5 12.2c2.6-4.4 8.2-5.7 12.1-2.6 1 .8 1.8 1.7 2.4 2.6-.6.9-1.4 1.8-2.4 2.6-3.9 3.1-9.5 1.8-12.1-2.6Z" />
+        <path d="M4.5 12.2 2.2 9.6M4.5 12.2l-2.3 2.7" />
+        <path d="M11 9.3c.8 1.7.8 4 0 5.8" opacity={0.55} />
+        <Dot x={16.3} y={11.5} r={0.95} />
+      </g>
     </Icon>
   )
 })
@@ -72,9 +80,11 @@ export const KoiIcon = memo(function KoiIcon(p: Props) {
 export const KoiOffIcon = memo(function KoiOffIcon(p: Props) {
   return (
     <Icon {...p}>
-      <path d="M7.4 8.4c2.9-1.5 6.5-1.2 9.2 1.2 1 .8 1.8 1.7 2.4 2.6-.5.7-1 1.4-1.7 2M13.8 16.7c-3.3.7-7-.6-9.3-4.5.7-1.2 1.6-2.2 2.6-3" />
-      <path d="M4.5 12.2 2.2 9.6M4.5 12.2l-2.3 2.7" />
-      <path d="m3.5 3.5 17 17" />
+      <g transform="translate(0.65 0)">
+        <path d="M7.4 8.4c2.9-1.5 6.5-1.2 9.2 1.2 1 .8 1.8 1.7 2.4 2.6-.5.7-1 1.4-1.7 2M13.8 16.7c-3.3.7-7-.6-9.3-4.5.7-1.2 1.6-2.2 2.6-3" />
+        <path d="M4.5 12.2 2.2 9.6M4.5 12.2l-2.3 2.7" />
+        <path d="m3.5 3.5 17 17" />
+      </g>
     </Icon>
   )
 })
@@ -95,9 +105,11 @@ export const SunIcon = memo(function SunIcon(p: Props) {
 export const MoonIcon = memo(function MoonIcon(p: Props) {
   return (
     <Icon {...p}>
-      <path d="M19.2 14.6A7.6 7.6 0 0 1 9.4 4.8a7.6 7.6 0 1 0 9.8 9.8Z" />
-      <Dot x={16.6} y={5.4} r={1.1} />
-      <Dot x={20} y={9} r={0.8} />
+      <g transform="translate(-0.25 -0.15)">
+        <path d="M19.2 14.6A7.6 7.6 0 0 1 9.4 4.8a7.6 7.6 0 1 0 9.8 9.8Z" />
+        <Dot x={16.6} y={5.4} r={1.1} />
+        <Dot x={20} y={9} r={0.8} />
+      </g>
     </Icon>
   )
 })

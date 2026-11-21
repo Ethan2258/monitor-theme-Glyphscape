@@ -115,16 +115,16 @@ const StatusBadge = memo(function StatusBadge({ label, full, tone }: { label: st
  * whenever any figure of it moves.
  */
 export const Country = memo(
-  function Country({ node }: { node: Node }) {
+  function Country({ node, className }: { node: Node; className?: string }) {
     if (!node.country) return null
-    if (hasFlag(node.country)) return <Flag code={node.country} />
+    if (hasFlag(node.country)) return <Flag code={node.country} className={className} />
     return (
       <Badge className="shrink-0 font-normal text-muted-foreground">
         {node.country}
       </Badge>
     )
   },
-  (a, b) => a.node.country === b.node.country,
+  (a, b) => a.node.country === b.node.country && a.className === b.className,
 )
 
 /**
@@ -418,8 +418,9 @@ export function NodeHead({ node, onBack }: { node: Node; onBack: () => void }) {
             would hang between the lines of a name that wraps on a phone. */}
         <div className="flex min-w-0 items-start gap-3">
           {node.country && (
-            <span className="mt-2.5 flex shrink-0 sm:mt-3.5">
-              <Country node={node} />
+            <span className="mt-1.5 flex shrink-0 sm:mt-2">
+              {/* In proportion to the name beside it, at the flag's own 3:2. */}
+              <Country node={node} className="h-5 w-7.5 rounded-[3px] sm:h-6 sm:w-9" />
             </span>
           )}
           <h1 className="min-w-0 text-2xl font-medium tracking-tight break-words sm:text-4xl">{node.name}</h1>

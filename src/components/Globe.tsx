@@ -157,8 +157,6 @@ export function Globe({ markers, selected, onPick }: {
     let hits: { code: string; x: number; y: number; reach: number }[] = []
     let raf = 0
     let last = performance.now()
-    // Toggled each idle frame: only every other one is drawn.
-    let halve = false
     let inView = true
 
     const BUCKETS = 10
@@ -350,11 +348,6 @@ export function Globe({ markers, selected, onPick }: {
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
-      // Left alone, the globe only sways: every other frame is plenty, and the
-      // springs simply take the longer step. In the hand, turning to a country or
-      // changing with the palette, it draws every frame.
-      const busy = drag || goal || pointerInside || document.documentElement.classList.contains("palette-fade")
-      if (!busy && (halve = !halve)) return
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000))
       last = now
       if (!inView || !view.size) return
