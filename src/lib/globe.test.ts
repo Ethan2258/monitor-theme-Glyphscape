@@ -1,4 +1,4 @@
-import { nearestRegion, regionsOf, shortestArc, springStep, wrapLon } from "./globe.ts"
+import { cruiseLat, nearestRegion, regionsOf, shortestArc, springStep, wrapLon } from "./globe.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -96,6 +96,20 @@ near(leg1 + leg2 + leg3, 360, 1e-6, "full tour sums to 360° eastward")
 eq(nearestRegion(fleet, -100), 1, "nearest to Americas")
 eq(nearestRegion(fleet, 15), 2, "nearest to Europe")
 eq(nearestRegion(fleet, -175), 0, "nearest across antimeridian")
+
+// cruiseLat returns defaults safely, leans towards facing clusters, and stays continuous at ±180°.
+eq(cruiseLat([], 0), 20, "cruiseLat empty falls back to 20")
+eq(cruiseLat([{ lon: 100, lat: 28, count: 5 }], -60), 28, "cruiseLat single region returns its lat")
+const northSouth = [
+  { lon: 0, lat: 35, count: 6 },
+  { lon: 180, lat: -25, count: 6 },
+]
+ok(cruiseLat(northSouth, 0) > 25, "facing northern cluster tilts north")
+ok(cruiseLat(northSouth, 180) < -15, "facing southern cluster tilts south")
+ok(
+  Math.abs(cruiseLat(northSouth, 179.9) - cruiseLat(northSouth, -179.9)) < 0.01,
+  "cruiseLat is smooth across antimeridian",
+)
 
 if (failed) {
   console.error(`\n${failed} 项不通过`)

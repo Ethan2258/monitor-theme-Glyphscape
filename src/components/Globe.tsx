@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 
 import { countryName } from "@/lib/countries"
 import {
-  nearestRegion,
+  cruiseLat,
   type Region,
   regionsOf,
   shortestArc,
@@ -60,19 +60,16 @@ const LIGHT = (() => {
   return v.map((c) => c / n)
 })()
 
-/** Seconds the idle globe rests on one region before turning to the next. */
-const DWELL = 9000
-
 /** Room around the sphere for a marker's ring to spread into. */
 const PAD = 14
-/** How far to either side the idle globe sways, in degrees, and how long one sway takes, in seconds. */
-const SWAY = 28
-const PERIOD = 36
-/** How long after a touch the globe waits before turning by itself again. */
-const REST = 2500
-/** Critically damped spring frequencies (rad/s) for selection aiming vs idle gliding. */
-const AIM_OMEGA = 6.5
-const IDLE_OMEGA = 1.6
+/** Steady eastward rotation speed when idling (degrees per second). */
+const CRUISE_SPEED = 14
+/** How long after a drag the globe waits before resuming its cruise (ms). */
+const REST = 1500
+/** Critically damped spring frequency (rad/s) for turning to a picked country. */
+const AIM_OMEGA = 7.5
+/** Exponential damping rate (1/s) for flick inertia coasting. */
+const COAST_DRAG = 2.4
 
 type Colors = { fg: string; globe: string; land: string; marker: string; offline: string; dark: boolean; wraith: boolean }
 
@@ -136,17 +133,13 @@ export function Globe({ markers, selected, onPick }: {
 
     // The view: the longitude and latitude at the centre of the disc. `fleet`
     // is which countries it was last turned to face.
-    const view = { lon: 105, lat: 20, size: 0, fleet: "", centre: { lon: 105, lat: 20 } }
+    const view = { lon: 105, lat: 20, size: 0, fleet: "" }
     // Explicit target when turning towards a picked country or updated fleet.
     let goal: { lon: number; lat: number; omega: number } | null = null
     let aimed: string | null = null
-    // The fleet's regions, anchored on the largest then moving steadily east.
     let regions: Region[] = []
-    let tour = 0
-    let tourAt = 0
-    let swayClock = 0
-    let needsResync = false
     let spin = { lon: 0, lat: 0 }
+    let coasting = false
     let drag: { x: number; y: number; moved: number; lastAt: number } | null = null
     let hover: string | null = null
     let lastTip: { code: string | null; x: number; y: number } = { code: null, x: 0, y: 0 }
@@ -159,7 +152,7 @@ export function Globe({ markers, selected, onPick }: {
     let last = performance.now()
     let inView = true
 
-    const BUCKETS = 10
+    const BUCKETS = 16
     const maxDots = points.length / 3
     const bucketBuf = Array.from({ length: BUCKETS }, () => new Float32Array(maxDots * 3))
     const bucketLen = new Int32Array(BUCKETS)
@@ -255,7 +248,8 @@ export function Globe({ markers, selected, onPick }: {
         if (z <= 0.02) continue
         const y = py * ct - z1 * st
         const lit = Math.max(0, x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2])
-        const alpha = clamp((baseAlpha + litScale * lit) * Math.min(1, z * 3), 0, 0.999)
+        const rim = z < 0.35 ? (z / 0.35) ** 1.3 : 1
+        const alpha = clamp((baseAlpha + litScale * lit) * rim, 0, 0.999)
         const b = (alpha * BUCKETS) | 0
         const idx = bucketLen[b]
         const buf = bucketBuf[b]
@@ -348,7 +342,7 @@ export function Globe({ markers, selected, onPick }: {
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
-      const dt = Math.min(0.1, Math.max(0, (now - last) / 1000))
+      const dt = Math.min(0.05, Math.max(0, (now - last) / 1000))
       last = now
       if (!inView || !view.size) return
       const { markers, selected } = live.current
@@ -358,21 +352,19 @@ export function Globe({ markers, selected, onPick }: {
       const fleet = markers.map((m) => `${m.code}${m.count}`).join()
       if (fleet !== view.fleet && markers.length) {
         regions = regionsOf(markers)
-        tour = 0
-        tourAt = now
-        swayClock = 0
         const pick = selected ? markers.find((m) => m.code === selected) : undefined
         const centre = pick
           ? { lon: wrapLon(pick.lon), lat: clamp(pick.lat, -50, 50) }
           : regions[0]
-        view.centre = regions[0]
         if (!view.fleet) {
           view.lon = centre.lon
           view.lat = centre.lat
           aimed = selected
           goal = null
+          coasting = false
         } else if (!selected) {
           goal = { lon: regions[0].lon, lat: regions[0].lat, omega: AIM_OMEGA }
+          coasting = false
         }
         view.fleet = fleet
       }
@@ -384,15 +376,14 @@ export function Globe({ markers, selected, onPick }: {
         const target = selected ? markers.find((m) => m.code === selected) : undefined
         if (target) {
           goal = { lon: wrapLon(target.lon), lat: clamp(target.lat, -50, 50), omega: AIM_OMEGA }
-          tour = nearestRegion(regions, target.lon)
-          tourAt = now
-          if (tour < regions.length) view.centre = regions[tour]
+          coasting = false
         }
       }
 
       if (drag) {
-        // Pointer drag directly drives the sphere; any previous target is void.
+        // Pointer drag directly drives the sphere; any previous target or coasting is void.
         goal = null
+        coasting = false
       } else if (goal) {
         const nextLon = springStep(view.lon, spin.lon, goal.lon, goal.omega, dt, true)
         const nextLat = springStep(view.lat, spin.lat, goal.lat, goal.omega, dt, false)
@@ -408,56 +399,41 @@ export function Globe({ markers, selected, onPick }: {
           view.lat = goal.lat
           spin = { lon: 0, lat: 0 }
           goal = null
-          tourAt = now
-          swayClock = 0
         }
-      } else if (
-        Math.hypot(spin.lon, spin.lat) > 1.2 &&
-        (!pointerInside || now < restUntil)
-      ) {
+      } else if (coasting) {
         // Frame-rate-independent integral of exponential flick friction.
-        const k = 3.2
-        const decay = Math.exp(-dt * k)
-        const avg = (1 - decay) / (k * Math.max(dt, 1e-6))
+        const decay = Math.exp(-dt * COAST_DRAG)
+        const avg = (1 - decay) / (COAST_DRAG * Math.max(dt, 1e-6))
         view.lon = wrapLon(view.lon + spin.lon * dt * avg)
         view.lat = clamp(view.lat + spin.lat * dt * avg, -70, 70)
-        spin = {
-          lon: Math.abs(spin.lon * decay) < 0.05 ? 0 : spin.lon * decay,
-          lat: Math.abs(spin.lat * decay) < 0.05 ? 0 : spin.lat * decay,
+        spin = { lon: spin.lon * decay, lat: spin.lat * decay }
+        // Hand seamlessly back into continuous cruise when flick speed drops below it (or settles).
+        if (
+          (!selected && !pointerInside && !reduced.matches && now >= restUntil &&
+            spin.lon > 0 && spin.lon <= CRUISE_SPEED && Math.abs(spin.lat) < 4) ||
+          Math.hypot(spin.lon, spin.lat) <= 1.5
+        ) {
+          coasting = false
         }
-      } else if (pointerInside || now < restUntil || reduced.matches) {
-        // Hover or post-drag rest gently brakes residual motion and holds tour timing.
-        const brake = Math.exp(-dt * 10)
+      } else if (pointerInside || now < restUntil || reduced.matches || selected !== null) {
+        // Hover, post-drag rest, reduced motion, or an active country filter gently
+        // brakes residual motion rather than drifting away.
+        const brake = Math.exp(-dt * 9)
         view.lon = wrapLon(view.lon + spin.lon * dt)
         view.lat = clamp(view.lat + spin.lat * dt, -70, 70)
         spin = {
           lon: Math.abs(spin.lon * brake) < 0.05 ? 0 : spin.lon * brake,
           lat: Math.abs(spin.lat * brake) < 0.05 ? 0 : spin.lat * brake,
         }
-        if (pointerInside) tourAt += dt * 1000
       } else {
-        if (needsResync) {
-          needsResync = false
-          tour = nearestRegion(regions, view.lon)
-          tourAt = now
-          swayClock = 0
-          if (regions.length) view.centre = regions[tour]
-        }
-        if (regions.length > 1 && now - tourAt > DWELL) {
-          tour = (tour + 1) % regions.length
-          tourAt = now
-        }
-        if (regions.length) view.centre = regions[tour]
-        swayClock += dt
-        const amp = regions.length > 1 ? 10 : SWAY
-        const swayLon = wrapLon(
-          view.centre.lon + amp * Math.sin((swayClock / PERIOD) * Math.PI * 2),
-        )
-        const nextLon = springStep(view.lon, spin.lon, swayLon, IDLE_OMEGA, dt, true)
-        const nextLat = springStep(view.lat, spin.lat, view.centre.lat, 1.2, dt, false)
-        view.lon = nextLon.value
+        // Brisk, uninterrupted eastward cruise, gently tilting latitude towards
+        // whichever fleet cluster faces front.
+        spin.lon += (CRUISE_SPEED - spin.lon) * (1 - Math.exp(-dt * 2.4))
+        view.lon = wrapLon(view.lon + spin.lon * dt)
+        const targetLat = cruiseLat(regions, view.lon)
+        const nextLat = springStep(view.lat, spin.lat, targetLat, 1.5, dt, false)
         view.lat = clamp(nextLat.value, -70, 70)
-        spin = { lon: nextLon.velocity, lat: nextLat.velocity }
+        spin.lat = nextLat.velocity
       }
 
       // The palette is read when it changes rather than listened for: at once
@@ -486,7 +462,7 @@ export function Globe({ markers, selected, onPick }: {
       drag = { ...p, moved: 0, lastAt: t }
       spin = { lon: 0, lat: 0 }
       goal = null
-      needsResync = true
+      coasting = false
       restUntil = Infinity
       if (e.pointerType !== "touch") cursor = p
       canvas.setPointerCapture(e.pointerId)
@@ -511,9 +487,9 @@ export function Globe({ markers, selected, onPick }: {
       const dLat = (dy / radius) * DEG
       view.lon = wrapLon(view.lon + dLon)
       view.lat = clamp(view.lat + dLat, -70, 70)
-      // Polling-rate-independent EMA velocity (tau = 35ms); a stationary pause zeroes inertia.
+      // Polling-rate-independent EMA velocity (tau = 30ms); a stationary pause zeroes inertia.
       if (dtMove < 0.08) {
-        const alpha = 1 - Math.exp(-dtMove / 0.035)
+        const alpha = 1 - Math.exp(-dtMove / 0.03)
         const instLon = clamp(dLon / dtMove, -360, 360)
         const instLat = clamp(dLat / dtMove, -240, 240)
         spin = {
@@ -536,10 +512,12 @@ export function Globe({ markers, selected, onPick }: {
         if (h) onPick(h.code === selected ? null : h.code)
         else if (selected) onPick(null)
         spin = { lon: 0, lat: 0 }
+        coasting = false
       } else {
         // Decay inertia if the user paused briefly before lifting the pointer.
-        const holdDecay = age > 0.09 ? 0 : Math.exp(-Math.max(0, age - 0.016) / 0.035)
+        const holdDecay = age > 0.09 ? 0 : Math.exp(-Math.max(0, age - 0.016) / 0.03)
         spin = { lon: spin.lon * holdDecay, lat: spin.lat * holdDecay }
+        coasting = Math.hypot(spin.lon, spin.lat) > 1.5
       }
       drag = null
       restUntil = performance.now() + REST
@@ -561,9 +539,7 @@ export function Globe({ markers, selected, onPick }: {
       const was = inView
       inView = entry.isIntersecting
       if (inView && !was) {
-        const t = performance.now()
-        last = t
-        tourAt = t
+        last = performance.now()
       }
     })
     seen.observe(canvas)

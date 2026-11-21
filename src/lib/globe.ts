@@ -152,3 +152,22 @@ export function nearestRegion(regions: readonly Region[], lon: number): number {
   }
   return best
 }
+
+/**
+ * Smooth continuous target latitude for a globe facing `lon`: leans gently
+ * towards whichever regional clusters lie on the front hemisphere while keeping
+ * a baseline weight so cross-ocean transitions remain C-infinity smooth.
+ */
+export function cruiseLat(regions: readonly Region[], lon: number): number {
+  if (regions.length === 0) return 20
+  if (regions.length === 1) return regions[0].lat
+  let sum = 0
+  let weight = 0
+  for (const r of regions) {
+    const front = Math.max(0, Math.cos(shortestArc(lon, r.lon) * RAD))
+    const w = (0.08 + front * front) * Math.max(1, r.count)
+    sum += r.lat * w
+    weight += w
+  }
+  return weight > 0 ? clamp(sum / weight, -25, 35) : regions[0].lat
+}
