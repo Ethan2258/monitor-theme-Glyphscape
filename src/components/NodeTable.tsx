@@ -4,7 +4,7 @@ import { Country, daysLeft, deployed, monthUsage } from "@/components/NodeCard"
 import { Card } from "@/components/ui/card"
 import type { Node } from "@/lib/api"
 import { convert, remaining, type Rates } from "@/lib/cost"
-import { bytes, cycle, FOREVER, money, percent, rate, sinceSeen, uptime } from "@/lib/format"
+import { bytes, cycle, FOREVER, money, pct as formatPct, percent, rate, sinceSeen, uptime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 // One grid for the heading and every row, so the columns line up.
@@ -16,7 +16,7 @@ const Bar = memo(function Bar({ pct, foot }: { pct: number | null; foot?: string
   const hot = pct >= 90
   return (
     <div className="min-w-0">
-      <div className={cn("tnum text-[13px] font-medium", hot && "text-hot")}>{pct < 10 ? pct.toFixed(1) : pct.toFixed(0)}%</div>
+      <div className={cn("tnum text-[13px] font-medium", hot && "text-hot")}>{formatPct(pct < 10 ? pct.toFixed(1) : pct.toFixed(0))}</div>
       <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted">
         <div className={cn("h-full rounded-full", hot ? "bg-hot" : "bg-foreground/80")} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
       </div>

@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from "react"
 
+import { pct as formatPct } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type Props = { label: ReactNode; pct: number | null; foot: ReactNode; empty?: ReactNode }
@@ -27,7 +28,7 @@ export const Meter = memo(function Meter({ label, pct, foot, empty = "—" }: Pr
       <div className="flex items-baseline justify-between gap-2">
         <span className="truncate text-xs text-muted-foreground">{label}</span>
         <span className={cn("tnum text-xs font-medium", hot && "text-hot")}>
-          {pct === null ? empty : `${pct < 10 ? pct.toFixed(1) : pct.toFixed(0)}%`}
+          {pct === null ? empty : formatPct(pct < 10 ? pct.toFixed(1) : pct.toFixed(0))}
         </span>
       </div>
       {/* Moved rather than resized: a transform eases on the compositor, where

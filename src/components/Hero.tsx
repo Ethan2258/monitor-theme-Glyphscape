@@ -4,7 +4,7 @@ import { daysLeft, deployed } from "@/components/NodeCard"
 import { Regions } from "@/components/Regions"
 import { throughput, type Node } from "@/lib/api"
 import { monthly, remaining, sum, type Rates } from "@/lib/cost"
-import { bytes, money, rate } from "@/lib/format"
+import { bytes, money, pct, rate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 /** A figure and its unit, set apart: "24.2 KB/s" as 24.2 and KB/s. */
@@ -178,7 +178,7 @@ function Overview({ nodes, cost, rates, primary, onOpen }: {
             ) : (
               <span className="min-w-0 max-w-[16rem] truncate text-foreground">{busiest.name}</span>
             )}
-            <span className={cn("tnum shrink-0", busiest.metrics.cpu >= 90 && "text-hot")}>{busiest.metrics.cpu.toFixed(1)}%</span>
+            <span className={cn("tnum shrink-0", busiest.metrics.cpu >= 90 && "text-hot")}>{pct(busiest.metrics.cpu.toFixed(1))}</span>
           </span>
         )}
       </p>

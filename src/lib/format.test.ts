@@ -4,7 +4,7 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, money, osName, pair, percent, quarters,
+  axisBytes, axisTop, bytes, cpuName, cycle, daysUntil, despike, money, osName, pair, pct, percent, quarters,
   RATE_FLOOR, rateAxis, sinceSeen, tickClock, timeTicks, uptime, windows, withGaps,
 } from "./format.ts"
 
@@ -192,6 +192,8 @@ eq(money(100, "港币"), "港币 100.00", "旧 hub 存下的非法代码不抛�
 
 eq(osName("Debian GNU/Linux 12 (bookworm)"), "Debian 12", "发行版名去掉代号")
 eq(cpuName("Intel(R) Xeon(R) CPU E5-2680 8-Core Processor"), "Intel Xeon E5-2680", "CPU 名去掉商标和核数")
+eq(pct(100), "100\u00a0%", "百分数保留不换行空格")
+eq(pct("63.0"), "63.0\u00a0%", "字符串百分数保留不换行空格")
 
 if (failed) {
   console.error(`\n${failed} 项不通过`)

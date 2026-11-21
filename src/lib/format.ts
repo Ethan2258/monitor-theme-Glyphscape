@@ -55,6 +55,14 @@ export function percent(used: number, total: number): number {
   return total > 0 ? (used / total) * 100 : 0
 }
 
+/**
+ * A percentage with its unit set apart, "63.0 %" beside "120 ms" and "6 GB":
+ * a no-break space keeps the sign from wrapping onto a line of its own.
+ */
+export function pct(figure: string | number): string {
+  return `${figure}\u00a0%`
+}
+
 export function uptime(seconds: number): string {
   if (!seconds) return "—"
   const d = Math.floor(seconds / 86400)

@@ -168,12 +168,7 @@ export function timeAxis(from: number, to: number, hours: number, width: number)
   }
 }
 
-/**
- * A percentage as the page prints every other figure with its unit, "63.0 %"
- * beside "120 ms" and "6 GB": with a space, a no-break one, so the sign is
- * never wrapped onto a line or an axis label of its own.
- */
-export const pct = (figure: string | number) => `${figure}\u00a0%`
+export { pct } from "@/lib/format"
 
 const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"]
 
