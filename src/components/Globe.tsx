@@ -157,7 +157,8 @@ export function Globe({ markers, selected, onPick }: {
     let hits: { code: string; x: number; y: number; reach: number }[] = []
     let raf = 0
     let last = performance.now()
-    let frame = 0
+    // Toggled each idle frame: only every other one is drawn.
+    let halve = false
     let inView = true
 
     const BUCKETS = 10
@@ -349,6 +350,11 @@ export function Globe({ markers, selected, onPick }: {
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
+      // Left alone, the globe only sways: every other frame is plenty, and the
+      // springs simply take the longer step. In the hand, turning to a country or
+      // changing with the palette, it draws every frame.
+      const busy = drag || goal || pointerInside || document.documentElement.classList.contains("palette-fade")
+      if (!busy && (halve = !halve)) return
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000))
       last = now
       if (!inView || !view.size) return
@@ -461,14 +467,13 @@ export function Globe({ markers, selected, onPick }: {
         spin = { lon: nextLon.velocity, lat: nextLat.velocity }
       }
 
-      // The palette is looked up now and then rather than listened for.
-      // At once when the palette has changed, so the globe turns with the page.
-      // Every frame while the palette blends (lib/palette.ts), so the globe changes with the page.
+      // The palette is read when it changes rather than listened for: at once
+      // when light, dark or the scene flips, and every frame while it blends
+      // (lib/palette.ts), so the globe changes with the page.
       const root = document.documentElement
       const blending = root.classList.contains("palette-fade")
       if (
         blending ||
-        frame++ % 20 === 0 ||
         colors.dark !== root.classList.contains("dark") ||
         colors.wraith !== root.classList.contains("wraith")
       ) {
@@ -600,7 +605,7 @@ export function Globe({ markers, selected, onPick }: {
     <div
       data-pond-ignore=""
       data-sky-ignore=""
-      className="relative mx-auto aspect-square w-full max-w-[15rem] sm:max-w-[17rem] lg:max-w-[19rem]"
+      className="relative mx-auto aspect-square w-full max-w-[12rem] sm:max-w-[17rem] lg:max-w-[19rem]"
     >
       <canvas
         ref={canvasRef}

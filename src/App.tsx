@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { lazy, startTransition, Suspense, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { flushSync } from "react-dom"
 import { DoorIcon, RippleIcon } from "@/components/icons"
 import { SceneMenu, ThemeMenu, type SceneChoice, type ThemeChoice } from "@/components/ThemeMenu"
@@ -47,8 +47,22 @@ type Me = { authed: boolean; github: boolean; site_name: string; public_page: bo
 
 // Split out because recharts is most of this bundle and the list page draws no
 // chart, with the rest fetched immediately after it paints.
-const loadDetail = () => import("@/components/NodeDetail").then((m) => ({ default: m.NodeDetail }))
-const NodeDetail = lazy(loadDetail)
+// One request, shared by the idle prefetch, a hover and the page itself. Once it
+// has arrived the component is used directly: `lazy` alone would suspend on its
+// first render anyway, and React then holds the fallback up for a few hundred
+// milliseconds even though the code is already here.
+type DetailComponent = typeof import("@/components/NodeDetail").NodeDetail
+let detailReady: DetailComponent | null = null
+let detailRequest: Promise<{ default: DetailComponent }> | null = null
+const loadDetail = () =>
+  (detailRequest ??= import("@/components/NodeDetail").then((m) => {
+    detailReady = m.NodeDetail
+    return { default: m.NodeDetail }
+  }))
+const LazyDetail = lazy(loadDetail)
+const prefetchDetail = () => {
+  void loadDetail()
+}
 
 // Storage can be switched off for the site, and then even reading it throws.
 function stored(key: string): string | null {
@@ -75,25 +89,58 @@ function useNodeRoute() {
     return match ? Number(match[1]) : null
   }
   const [id, setId] = useState(read)
-  // Where the list was scrolled to when a node was opened, so that coming back
-  // returns to the same card.
+  const current = useRef(id)
+  // Where the list was scrolled to when a node was opened, and which node it
+  // was, so that coming back returns to the same card, focus and all.
   const listScroll = useRef(0)
+  const opened = useRef<number | null>(null)
+  // Where to scroll and what to focus once the new page is on screen: applied
+  // in the commit that shows it, so neither page is ever seen at the other's
+  // scroll position.
+  const arrive = useRef<{ top: number; focus: number | null | "title" } | null>(null)
   useEffect(() => {
-    const sync = () => setId(read())
+    const sync = () => {
+      current.current = read()
+      setId(current.current)
+    }
     addEventListener("popstate", sync)
     return () => removeEventListener("popstate", sync)
   }, [])
-  return [
-    id,
-    (next: number | null) => {
-      const path = next === null ? "/" : `/node/${next}`
-      if (next !== null && id === null) listScroll.current = scrollY
-      if (location.pathname !== path) history.pushState({}, "", path)
-      setId(next)
-      const top = next === null && id !== null ? listScroll.current : 0
-      requestAnimationFrame(() => scrollTo(0, top))
-    },
-  ] as const
+  useLayoutEffect(() => {
+    const next = arrive.current
+    if (!next) return
+    arrive.current = null
+    scrollTo(0, next.top)
+    // Keyboard and screen-reader visitors land on the node's name, or back on
+    // the card they opened, rather than at the top of the document.
+    const target =
+      next.focus === "title"
+        ? document.querySelector<HTMLElement>("h1")
+        : next.focus === null
+          ? null
+          : document.querySelector<HTMLElement>(`[data-node="${next.focus}"]`)
+    if (target) {
+      if (next.focus === "title" && !target.hasAttribute("tabindex")) target.tabIndex = -1
+      target.focus({ preventScroll: true })
+    }
+  }, [id])
+  // Stable, so the list and its cards can skip re-rendering.
+  const go = useCallback((next: number | null) => {
+    const from = current.current
+    const path = next === null ? "/" : `/node/${next}`
+    if (next !== null && from === null) {
+      listScroll.current = scrollY
+      opened.current = next
+    }
+    if (location.pathname !== path) history.pushState({}, "", path)
+    const back = next === null && from !== null
+    arrive.current = { top: back ? listScroll.current : 0, focus: next === null ? (back ? opened.current : null) : "title" }
+    current.current = next
+    // In a transition: the page in view stays until the next one can render,
+    // with no fallback flashing in between.
+    startTransition(() => setId(next))
+  }, [])
+  return [id, go] as const
 }
 
 const DARK_MEDIA = matchMedia("(prefers-color-scheme: dark)")
@@ -255,9 +302,16 @@ export default function App() {
     if (me && !me.public_page && !me.authed) location.href = "/admin/"
   }, [me])
 
-  const sorted = [...(nodes ?? [])].sort((a, b) => a.sort - b.sort || a.id - b.id)
+  const sorted = useMemo(() => [...(nodes ?? [])].sort((a, b) => a.sort - b.sort || a.id - b.id), [nodes])
   const selected = sorted.find((n) => n.id === open)
-  const view = narrow(sorted, filters)
+  // The search box answers each key at once; the list it narrows follows a beat
+  // behind when there is a lot to redraw.
+  const query = useDeferredValue(filters.query)
+  const view = useMemo(() => narrow(sorted, { ...filters, query }), [sorted, filters, query])
+  // The overview sums what the group, the country and the status leave, not
+  // what the search box has found: typing a name does not empty the figures.
+  const overview = useMemo(() => (query ? narrow(sorted, { ...filters, query: "" }).shown : view.shown), [sorted, filters, query, view.shown])
+  const pickRegion = useCallback((region: string | null) => setFilters((f) => ({ ...f, region })), [])
   // A tab or a country that has emptied is let go of, so a later one of the
   // same name does not take the page over.
   useEffect(() => {
@@ -281,6 +335,7 @@ export default function App() {
   if (!me.public_page && !me.authed) return null
 
   const primary = settings.primary_currency
+  const Detail = detailReady ?? LazyDetail
   const notice = settings.notice.trim()
 
   return (
@@ -335,10 +390,10 @@ export default function App() {
           <div className="h-[22rem]" />
         ) : (
           <Hero
-            nodes={view.shown}
+            nodes={overview}
             scope={view.inGroup}
             region={view.region}
-            onRegion={(region) => setFilters({ ...filters, group: view.group, region })}
+            onRegion={pickRegion}
             onOpen={go}
             summary={settings.show_summary}
             globe={settings.show_globe}
@@ -357,8 +412,8 @@ export default function App() {
             <Skeleton className="h-96" />
           ) : selected ? (
             <Card className="gap-0 p-4 sm:p-6">
-              <Suspense fallback={<Skeleton className="h-96" />}>
-                <NodeDetail
+              <Suspense fallback={<Skeleton className="h-[34rem]" />}>
+                <Detail
                   node={selected}
                   historyDays={me.history_days ?? 7}
                   price={settings.show_price}
@@ -389,9 +444,7 @@ export default function App() {
             filters={filters}
             onFilters={setFilters}
             onOpen={go}
-            onPrefetch={() => {
-              void loadDetail()
-            }}
+            onPrefetch={prefetchDetail}
             toolbar={settings.show_toolbar}
             price={settings.show_price}
             rates={rates}

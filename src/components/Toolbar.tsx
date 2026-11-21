@@ -24,8 +24,12 @@ export function Toolbar({ query, sort, view, onQuery, onSort, onView }: {
   onSort: (sort: SortKey) => void
   onView: (view: View) => void
 }) {
+  // Pushed to the row's end only from xl, where it fits on the row beside the
+  // tabs and chips. Narrower, it wraps onto a line of its own, and pushed right
+  // there it would hang off the end of an empty line; from the left, it reads
+  // as the list's second row of controls.
   return (
-    <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+    <div className="flex w-full items-center gap-2 sm:w-auto xl:ml-auto">
       <label className="relative min-w-0 flex-1 sm:flex-initial">
         <span className="sr-only">搜索节点</span>
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />

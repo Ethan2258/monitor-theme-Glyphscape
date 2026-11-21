@@ -44,6 +44,9 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
   ]
   // A hub that has never filled in a price would otherwise show 免费 on every card.
   const priced = price && nodes.some((n) => n.price > 0)
+  // Whether the cards keep a line for the operator's remark: on all of them if
+  // any shown has one, so the rows line up, and on none otherwise.
+  const remarks = shown.some((n) => n.public_remark)
 
   return (
     <>
@@ -67,7 +70,7 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
                 aria-pressed={group === value}
                 onClick={() => onFilters({ ...filters, group: value, region: null })}
                 className={cn(
-                  "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-sm transition-colors",
+                  "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-sm transition-colors max-sm:h-9",
                   group === value ? "bg-card font-medium shadow-xs" : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -77,6 +80,8 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
             ))}
           </div>
         )}
+        {/* The chips grow to a fingertip's height on a phone; 28px is enough
+            for a pointer, not for a thumb. */}
         {states.length > 0 && (
           <div role="group" aria-label="状态" className="flex flex-wrap items-center gap-1.5">
             {states.map(([key, label]) => {
@@ -87,7 +92,7 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
                   aria-pressed={on}
                   onClick={() => onFilters({ ...filters, status: on ? null : key })}
                   className={cn(
-                    "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs transition-colors",
+                    "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs transition-colors max-sm:h-9 max-sm:px-3",
                     on
                       ? "border-foreground/50 bg-secondary text-foreground"
                       : "text-muted-foreground hover:border-ring hover:text-foreground",
@@ -125,20 +130,22 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
           )}
         </p>
       ) : view === "table" ? (
+        // onOpen goes to every card as it is, never wrapped per card: App keeps it
+        // stable, so a card whose node did not change is skipped on a push.
         <>
           <div className="hidden lg:block" onPointerEnter={onPrefetch} onFocus={onPrefetch}>
             <NodeTable nodes={shown} price={priced} rates={rates} primary={primary} onOpen={onOpen} />
           </div>
           <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:hidden" onPointerEnter={onPrefetch} onFocus={onPrefetch}>
             {shown.map((n) => (
-              <NodeCard key={n.id} node={n} price={priced} rates={rates} primary={primary} onOpen={() => onOpen(n.id)} />
+              <NodeCard key={n.id} node={n} price={priced} remarks={remarks} rates={rates} primary={primary} onOpen={onOpen} />
             ))}
           </div>
         </>
       ) : (
         <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" onPointerEnter={onPrefetch} onFocus={onPrefetch}>
           {shown.map((n) => (
-            <NodeCard key={n.id} node={n} price={priced} rates={rates} primary={primary} onOpen={() => onOpen(n.id)} />
+            <NodeCard key={n.id} node={n} price={priced} remarks={remarks} rates={rates} primary={primary} onOpen={onOpen} />
           ))}
         </div>
       )}

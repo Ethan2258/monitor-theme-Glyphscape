@@ -71,7 +71,7 @@ function HeaderMenu<T extends string>({
         aria-expanded={open}
         title={title}
         onClick={() => setOpen(!open)}
-        className="inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="inline-flex size-10 items-center sm:size-8 justify-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <CurrentIcon className="size-[18px]" />
       </button>

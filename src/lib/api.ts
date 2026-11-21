@@ -196,6 +196,33 @@ export function safeNodes(nodes: Node[]): Node[] {
 }
 
 /**
+ * Whether two reports of a node say the same thing: every field equal, the
+ * metrics and their load averages compared field by field. Two levels deep is
+ * all a node has.
+ */
+function same(a: unknown, b: unknown, depth = 2): boolean {
+  if (Object.is(a, b)) return true
+  if (!depth || typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  const keys = Object.keys(a)
+  if (keys.length !== Object.keys(b).length) return false
+  return keys.every((k) => same((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], depth - 1))
+}
+
+/**
+ * The nodes of `next`, each replaced by its object in `previous` when nothing
+ * in it changed. Every push parses into all-new objects, so without this no
+ * card could tell by identity that its node is as it was, and every card on
+ * the page would draw again every two seconds -- an offline one included.
+ */
+export function reuseNodes(previous: Map<number, Node>, next: Node[]): Node[] {
+  return next.map((node) => {
+    const old = previous.get(node.id)
+    return old && same(old, node) ? old : node
+  })
+}
+
+/**
  * Asks the hub to gzip each pushed frame, sent then as a binary message: a
  * hundred reporting nodes are about 110 KB of JSON every two seconds, 15 KB
  * compressed. Only where the browser can decompress it; a hub that predates the
@@ -238,8 +265,10 @@ export function useNodes() {
     // are dropped on the first arrival rather than at once, which would read as
     // 0 B/s beside figures that are merely stale.
     let gap = false
+    let previous = new Map<number, Node>()
     const receive = (list: Node[]) => {
-      const safe = safeNodes(list)
+      const safe = reuseNodes(previous, safeNodes(list))
+      previous = new Map(safe.map((n) => [n.id, n]))
       if (gap) speedHistory.length = 0
       gap = false
       sample(safe)
@@ -251,6 +280,27 @@ export function useNodes() {
       })
     }
 
+    // The snapshot a reload or the panel mounts from. Serialising it is some
+    // 30 KB of JSON into sessionStorage, which on every push cost more than the
+    // push itself; only the last one before the page goes is ever read. So the
+    // first is kept at once, for a handoff to the panel straight after load, and
+    // the rest wait for the page to be hidden, left or unmounted -- the panel's
+    // handoff unmounts this page before it asks for the list.
+    let saved = false
+    let unsaved: { nodes: Node[]; admin?: boolean } | null = null
+    const record = (nodes: Node[], admin?: boolean) => {
+      if (saved) {
+        unsaved = { nodes, admin }
+        return
+      }
+      saved = true
+      recordNodesSnapshot(nodes, admin)
+    }
+    const save = () => {
+      if (unsaved) recordNodesSnapshot(unsaved.nodes, unsaved.admin)
+      unsaved = null
+    }
+
     // Bumped by `pause`: a request started before the page was hidden may fail
     // or land after a fresh one, and neither result describes the page now.
     let epoch = 0
@@ -259,7 +309,7 @@ export function useNodes() {
       return api<{ nodes: Node[]; admin?: boolean }>("/nodes")
         .then((d) => {
           if (started !== epoch) return
-          recordNodesSnapshot(d.nodes, d.admin)
+          record(d.nodes, d.admin)
           receive(d.nodes)
         })
         .catch((e: Error) => {
@@ -313,7 +363,7 @@ export function useNodes() {
             const frame = JSON.parse(await frameText(event.data)) as { nodes: Node[]; admin?: boolean }
             if (opened.readyState !== WebSocket.OPEN) return
             watch()
-            recordNodesSnapshot(frame.nodes, frame.admin)
+            record(frame.nodes, frame.admin)
             receive(frame.nodes)
             // The stream has returned; the poll was only covering for it.
             if (poll) {
@@ -338,6 +388,7 @@ export function useNodes() {
     // So a hidden page lets go of the stream and starts nothing, and a visible
     // one fetches at once and opens a fresh stream.
     const pause = () => {
+      save()
       epoch++
       if (socket) {
         socket.onclose = null
@@ -357,10 +408,13 @@ export function useNodes() {
     }
     const visibility = () => (document.hidden ? pause() : resume())
     document.addEventListener("visibilitychange", visibility)
+    // A reload or a link away does not always hide the page first.
+    addEventListener("pagehide", save)
     resume()
 
     return () => {
       document.removeEventListener("visibilitychange", visibility)
+      removeEventListener("pagehide", save)
       pause()
     }
   }, [])

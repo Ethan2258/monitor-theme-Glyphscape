@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from "react"
 import {
   Area, Brush, CartesianGrid, ComposedChart, Line, ResponsiveContainer,
   Tooltip, XAxis, YAxis, type DotItemDotProps,
@@ -90,6 +90,11 @@ const PEAK_BAND = {
   legendType: "none" as const,
 }
 
+// The CPU panel's band is alone in its panel, so its edge can fade without
+// taking another series' shade; at full strength a busy day of one-minute
+// bursts draws in ink as a fringe of white bristles on the dark palette.
+const CPU_PEAK_BAND = { ...PEAK_BAND, strokeOpacity: 0.45 }
+
 // Nor does the tooltip slide. Entering a chart at its right edge, it appears
 // beside the cursor first and would glide 400 ms back within the chart,
 // overhanging the page by up to 140 px and flashing a horizontal scrollbar.
@@ -135,6 +140,81 @@ const TABS = [
   { key: "resources", label: "资源" },
   { key: "latency", label: "网络延迟" },
 ] as const
+type TabKey = (typeof TABS)[number]["key"]
+
+/**
+ * A history response and what it was asked for. Kept per tab, so a new range or
+ * a retry can leave the last answer on screen, dimmed, until the next one
+ * arrives, instead of collapsing the page to a placeholder and clamping the
+ * reader's scroll.
+ */
+type Loaded = { node: number; hours: number; attempt: number; history: History; failed: string }
+
+const EMPTY: History = { metrics: [], ping: [], probes: {} }
+
+type TipFormatter = NonNullable<ComponentProps<typeof Tooltip>["formatter"]>
+
+// The tooltips' formatters live out here rather than inline, where each render
+// would hand recharts a new function and have it redraw every panel for it.
+const bytesTip: TipFormatter = (v) => bytes(Number(v))
+
+const cpuTip: TipFormatter = (v, _name, item) => {
+  const top = item?.payload?.cpu_max
+  const mean = `${Number(v).toFixed(1)}%`
+  return [top === undefined ? mean : `均值 ${mean} · 峰值 ${Number(top).toFixed(1)}%`, "CPU"]
+}
+
+// The hub's figures rather than `v`, which is lifted to the axis floor.
+const rateTip: TipFormatter = (_, name, item) => {
+  const mean = item?.payload?.[`net_${item.dataKey}`]
+  const top = item?.payload?.[`net_${item.dataKey}_max`]
+  return [top === undefined ? rate(mean) : `均值 ${rate(mean)} · 峰值 ${rate(top)}`, name]
+}
+
+// The line is drawn from what answered, so without the loss a bucket that lost
+// most of its packets reads as normal. `dataKey` is `t7`/`s7`; the loss sits at
+// `l7`. Rounded because a clipped sample carries the median of an even window,
+// which falls between two of the whole milliseconds the hub stores.
+const latencyTip: TipFormatter = (v, name, item) => {
+  const loss = Number(item?.payload?.[`l${String(item.dataKey).slice(1)}`] ?? 0)
+  return [`${Math.round(Number(v))} ms${loss > 0 ? ` · 丢 ${loss}%` : ""}`, name]
+}
+
+const countTick = (v: number) => (v % 1 ? v.toFixed(1) : String(v))
+
+/**
+ * A zero-anchored byte axis whose gridlines fall on a power of two: memory is
+ * sold in them, so 7.6 GB reads 2, 4, 6, 8 GB rather than the 1.9, 3.8, 5.7 its
+ * quarters would print. At most four steps, the top the first multiple of the
+ * step at or above `max`.
+ */
+function binaryAxis(max: number): { domain: [number, number]; ticks: number[] } {
+  if (!(max > 0)) return { domain: [0, 1], ticks: quarters(1) }
+  const step = 2 ** Math.ceil(Math.log2(max / 4))
+  const top = Math.ceil(max / step) * step
+  const ticks: number[] = []
+  for (let t = 0; t <= top; t += step) ticks.push(t)
+  return { domain: [0, top], ticks }
+}
+
+// A real time axis rather than the category axis recharts defaults to: on a
+// category axis ticks are selected by index, so a period the agent was offline
+// for collapses to nothing. Built once per data and range by its callers, since
+// fresh `ticks` and `tickFormatter` on each render redraw the whole chart.
+function timeAxis(rows: { ts: number }[], hours: number, from = 0, to = rows.length - 1) {
+  // Explicit, or recharts places them at 05:14 and 10:22. Any that still collide
+  // are dropped by `minTickGap`.
+  const ticks = rows.length ? timeTicks(rows[from].ts, rows[to].ts) : []
+  return {
+    dataKey: "ts",
+    type: "number" as const,
+    domain: ["dataMin", "dataMax"] as const,
+    ticks,
+    tickFormatter: tickClock(ticks, hours),
+    minTickGap: hours > 24 ? 72 : 40,
+    ...AXIS,
+  }
+}
 
 /** How a plan counts traffic against its quota. */
 const TRAFFIC_MODES: Record<string, string> = { sum: "双向", up: "仅上行", down: "仅下行", max: "取大" }
@@ -243,7 +323,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
   primary: "CNY" | "USD"
 }) {
   const ranges = useMemo(() => windows(historyDays), [historyDays])
-  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("resources")
+  const [tab, setTab] = useState<TabKey>("resources")
   // Each tab keeps its own range: a 7-day trend and a 1-hour trace answer
   // different questions.
   const [picked, setPicked] = useState({ resources: 6, latency: 6 })
@@ -252,13 +332,20 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
   // Probes switched off. Hiding a slow one is what makes the fast ones readable,
   // as the axis rescales to what remains.
   const [hiddenProbes, setHiddenProbes] = useState<number[]>([])
-  const [data, setData] = useState<History | null>(null)
+  const [loaded, setLoaded] = useState<Partial<Record<TabKey, Loaded>>>({})
+  const [attempt, setAttempt] = useState(0)
+  const entry = loaded[tab]
+  // Another node's history is never shown in this one's place, dimmed or not.
+  const current = entry?.node === node.id ? entry : undefined
+  const data = current?.history ?? null
   // Retained rather than folded into an empty result: a refused request and an
   // empty window are different answers, and the hub has reason to refuse this one
   // -- it caps how many history windows it builds concurrently. Rendered as an
   // empty window, a 503 would misdirect the reader.
-  const [failed, setFailed] = useState("")
-  const [attempt, setAttempt] = useState(0)
+  const failed = current?.failed ?? ""
+  // What is on screen answers an earlier question, and the new answer is in
+  // flight.
+  const stale = !!current && (current.hours !== hours || current.attempt !== attempt)
   // Where the brush has been dragged, so the axis reticks for the visible span
   // rather than retaining the whole window's ticks.
   const [zoom, setZoom] = useState<[number, number] | null>(null)
@@ -267,14 +354,14 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
 
   useEffect(() => {
     let active = true
-    // The charts must not continue drawing the old range while the new one is in
-    // flight.
-    // oxlint-disable-next-line react/set-state-in-effect
-    setData(null)
-    // oxlint-disable-next-line react/set-state-in-effect
-    setZoom(null)
-    // oxlint-disable-next-line react/set-state-in-effect
-    setFailed("")
+    // The old range stays drawn, dimmed, while the new one is in flight: emptied,
+    // the charts would fall to a placeholder half their height and back. The
+    // brush is reset with the data it selects from, not before.
+    const settle = (history: History, failed = "") => {
+      if (!active) return
+      setZoom(null)
+      setLoaded((all) => ({ ...all, [tab]: { node: node.id, hours, attempt, history, failed } }))
+    }
     // What this screen can resolve, in device pixels, which is the unit the line
     // is drawn in: a 1280-wide retina panel has 2560 of them for a day of minutes.
     // Read here rather than from a ref, since the hub only thins further, an
@@ -286,10 +373,8 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
     const points = Math.round(globalThis.innerWidth * (globalThis.devicePixelRatio || 1))
     const series = tab === "latency" ? "ping" : "metrics"
     api<History>(`/nodes/${node.id}/metrics?hours=${hours}&points=${points}&series=${series}`)
-      .then((next) => { if (active) setData(next) })
-      .catch((e: Error) => {
-        if (active) { setFailed(e.message); setData({ metrics: [], ping: [], probes: {} }) }
-      })
+      .then((next) => settle(next))
+      .catch((e: Error) => settle(EMPTY, e.message))
     return () => { active = false }
   }, [node.id, hours, tab, attempt])
 
@@ -369,7 +454,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
     const counts = axisTop(max((m) => Math.max(m.tcp ?? 0, m.udp ?? 0, m.procs ?? 0)), 8, Infinity)
     return {
       cpu: { domain: [0, cpu], ticks: quarters(cpu) },
-      mem: { domain: [0, mem], ticks: quarters(mem) },
+      mem: binaryAxis(mem),
       counts: { domain: [0, counts], ticks: quarters(counts) },
       // From the slowest rate drawn to the highest peak, so the band stays
       // within the panel.
@@ -444,7 +529,11 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
     return typical.length > 1 && Math.max(...typical) >= 6 * Math.max(1, Math.min(...typical))
   }, [shownProbes])
   // Keyed on the full list, so a line keeps its colour when others are hidden.
-  const style = (id: number) => PALETTE[pingSeries.findIndex((p) => p.id === id) % PALETTE.length]
+  // Memoised with it, since the latency chart is redrawn when this changes.
+  const style = useCallback(
+    (id: number) => PALETTE[pingSeries.findIndex((p) => p.id === id) % PALETTE.length],
+    [pingSeries],
+  )
 
   // The hub stamps every sample with its bucket rather than the second the probe
   // finished, so probes reporting at the bucket's rate share rows instead of each
@@ -495,23 +584,26 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
     return [...rows.values()].sort((a, b) => a.ts - b.ts)
   }, [pingSeries])
 
-  // A real time axis rather than the category axis recharts defaults to: on a
-  // category axis ticks are selected by index, so a period the agent was offline
-  // for collapses to nothing.
-  const timeAxis = (rows: { ts: number }[], from = 0, to = rows.length - 1) => {
-    // Explicit, or recharts places them at 05:14 and 10:22. Any that still collide
-    // are dropped by `minTickGap`.
-    const ticks = rows.length ? timeTicks(rows[from].ts, rows[to].ts) : []
-    return {
-      dataKey: "ts",
-      type: "number" as const,
-      domain: ["dataMin", "dataMax"] as const,
-      ticks,
-      tickFormatter: tickClock(ticks, hours),
-      minTickGap: hours > 24 ? 72 : 40,
-      ...AXIS,
+  // Where the latency column begins on screen, so its height can occupy the
+  // remainder. Measured after layout whenever what is drawn above it can have
+  // moved -- new data, the other tab, or a resize reflowing the facts above --
+  // rather than in a ref callback, which ran on every render: a live node
+  // re-renders every two seconds, and each one forced a layout to read a top that
+  // had not changed. `+ scrollY`, since getBoundingClientRect is measured from
+  // the viewport.
+  const column = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = column.current
+      if (el) setChartTop(el.getBoundingClientRect().top + scrollY)
     }
-  }
+    measure()
+    addEventListener("resize", measure)
+    return () => removeEventListener("resize", measure)
+  }, [data, tab])
+  // Less the card's own padding and the gap under it, so the card ends within
+  // the window.
+  const columnStyle = chartTop ? { height: `calc(100svh - ${Math.round(chartTop)}px - 3rem)` } : undefined
 
   const days = daysLeft(node)
   const worth = price ? remaining(node, days) : null
@@ -525,15 +617,17 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
   }
   const billedIn = node.currency.toUpperCase()
   const used = monthUsage(node)
-  const clock = clockFor(hours)
 
   return (
     <div className="space-y-4">
       {/* One flat grid of facts: one machine's spec sheet, where a box around
-          a single topic would be just a box. Three across at lg, two at md, one
-          on a phone -- a kernel version or a CPU model needs about 270px to
-          stay whole. */}
-      <div className="grid gap-x-10 gap-y-6 md:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]">
+          a single topic would be just a box. Two across from md, one on a
+          phone -- a kernel version or a CPU model needs about 270px to stay
+          whole. The cost sits under the traffic rather than in a third column:
+          two rows of its own beside the machine's seven left that column mostly
+          empty, and the two short lists stacked come out about as tall as the
+          machine's. */}
+      <div className="grid gap-x-10 gap-y-6 md:grid-cols-2">
       <Facts title="机器">
         <Fact label="系统" value={[osName(node.os), node.kernel].filter(Boolean).join(" · ")} />
         <Fact
@@ -561,6 +655,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
         />
         <Fact label="主机名 / 地址" value={[node.hostname, node.ip].filter(Boolean).join(" · ")} />
       </Facts>
+      <div className="min-w-0 space-y-6">
       <Facts title="流量">
         <Fact label="今日流量" value={`↓ ${bytes(node.day_rx)} · ↑ ${bytes(node.day_tx)}`} />
         <Fact
@@ -590,6 +685,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
           value={worth === null ? null : `${both(worth)} · 剩 ${days} 天`}
         />
       </Facts>
+      </div>
       </div>
 
       {node.remark && (
@@ -636,333 +732,400 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
       </div>
 
       {!data ? (
-        <Skeleton className="h-40 w-full" />
-      ) : failed ? (
-        <p className="py-8 text-center text-sm text-destructive" role="alert">
-          读取历史数据失败：{failed}
-          <button className="ml-2 underline" onClick={() => setAttempt((n) => n + 1)}>重试</button>
-        </p>
-      ) : tab === "latency" ? (
-        pingSeries.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">这段时间没有延迟数据</p>
+        tab === "latency" ? (
+          // Measured and sized as the chart's column is, so the chart lands in
+          // the space it held.
+          <Skeleton ref={column} style={columnStyle} className="min-h-72 w-full" aria-busy />
         ) : (
-          // An explicit pixel height on the column, so the chart can be `flex-1`
-          // within it while the legend takes what it needs: four probes are one row
-          // of chips on a desktop and two on a phone, so any fixed reservation is
-          // wrong on one of them.
-          <div
-            // `+ scrollY`, because getBoundingClientRect is measured from the
-            // viewport and this callback runs on every render; a live node
-            // re-renders every two seconds, so a scrolled page would re-derive the
-            // height from a top that has moved.
-            ref={(el) => {
-              if (el) setChartTop(el.getBoundingClientRect().top + scrollY)
-            }}
-            style={
-              chartTop
-                // Less the card's own padding and the gap under it, so the card
-                // ends within the window.
-                ? { height: `calc(100svh - ${Math.round(chartTop)}px - 3rem)` }
-                : undefined
-            }
-            className="flex min-h-72 flex-col gap-3">
-            {/* `min-h-0` is what makes `flex-1` a real number rather than the
-                content's own height: ResponsiveContainer reads its parent, and
-                a flex child not told it may shrink reports whatever the SVG
-                last was. The column above has a height in pixels, so this
-                resolves at layout instead of coming back 0. */}
-            <div className="min-h-0 w-full flex-1 text-muted-foreground">
-              {shownProbes.length === 0 ? (
-                <p className="py-8 text-center text-sm">没有选中任何探测</p>
-              ) : (
-                <ResponsiveContainer>
-                  <ComposedChart data={pingRows}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                    <XAxis
-                      {...timeAxis(
-                        pingRows,
-                        Math.min(zoom?.[0] ?? 0, pingRows.length - 1),
-                        Math.min(zoom?.[1] ?? pingRows.length - 1, pingRows.length - 1),
-                      )}
-                    />
-                    {/* Not anchored at zero: these lines live in a narrow band
-                        far from it, and zero flattens every wobble. */}
-                    {spread ? (
-                      <YAxis unit="ms" width={52} scale="sqrt" domain={[0, "auto"]} {...AXIS} />
-                    ) : (
-                      <YAxis unit="ms" width={52} domain={["auto", "auto"]} {...AXIS} />
-                    )}
-                    <Tooltip
-                      {...TOOLTIP}
-                      // The line is drawn from what answered, so without this a
-                      // bucket that lost most of its packets reads as normal.
-                      // `dataKey` is `t7`/`s7`; the loss sits at `l7`.
-                      //
-                      // Rounded because a clipped sample carries the median of
-                      // an even window, which falls between two of the whole
-                      // milliseconds the hub stores.
-                      formatter={(v, name, item) => {
-                        const loss = Number(item?.payload?.[`l${String(item.dataKey).slice(1)}`] ?? 0)
-                        return [`${Math.round(Number(v))} ms${loss > 0 ? ` · 丢 ${loss}%` : ""}`, name]
-                      }}
-                    />
-                    {/* Behind the line, the range that bucket's answers
-                        spanned -- Smokeping's "smoke". At the day window a
-                        bucket moves 63 ms at the 90th percentile against the
-                        25 ms the trend moves, so a line alone draws the smaller
-                        of the two.
-
-                        Only with one probe on screen: rendered for four, the
-                        bands overlap into a fog and their extremes drag the
-                        axis from 165-385 out to 140-420. */}
-                    {shownProbes.length === 1 &&
-                      shownProbes.map((s) => (
-                        <Area
-                          key={`band${s.id}`}
-                          dataKey={`${smooth ? "c" : "b"}${s.id}`}
-                          stroke="none"
-                          fill={style(s.id).stroke}
-                          fillOpacity={0.16}
-                          isAnimationActive={false}
-                          tooltipType="none"
-                          legendType="none"
-                          connectNulls
-                        />
-                      ))}
-                    {shownProbes.map((s) => (
-                      <Line
-                        key={s.id}
-                        dataKey={`${smooth ? "s" : "t"}${s.id}`}
-                        name={s.name}
-                        stroke={style(s.id).stroke}
-                        strokeDasharray={style(s.id).dash}
-                        {...SERIES}
-                        connectNulls
-                      />
-                    ))}
-                    {/* Drag either handle to zoom into a stretch of the trend. */}
-                    <Brush
-                      dataKey="ts"
-                      height={22}
-                      travellerWidth={8}
-                      tickFormatter={clock}
-                      fill="var(--muted)"
-                      stroke="var(--ring)"
-                      onChange={(r) => setZoom([r.startIndex ?? 0, r.endIndex ?? pingRows.length - 1])}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-
-            {/* Under the chart: what it covers is picked at the top, what is
-                drawn in it is picked here. Recharts paints the brush into the
-                same SVG as the axis, so this is as close beneath as HTML
-                sits. */}
-            {(pingSeries.length > 1 || pingSeries.some((s) => s.loss > 0)) && (
-              <div className="flex flex-wrap items-center justify-center gap-1.5">
-                {pingSeries.map((s) => {
-                  const shown = !hiddenProbes.includes(s.id)
-                  return (
-                    <button
-                      key={s.id}
-                      aria-pressed={shown}
-                      onClick={() =>
-                        setHiddenProbes((h) => (shown ? [...h, s.id] : h.filter((id) => id !== s.id)))
-                      }
-                      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-opacity ${
-                        shown ? "" : "opacity-40"
-                      }`}
-                    >
-                      {/* The swatch carries the same colour and dash as the line. */}
-                      <svg width="14" height="6" className="shrink-0" aria-hidden>
-                        <line
-                          x1="0"
-                          y1="3"
-                          x2="14"
-                          y2="3"
-                          stroke={style(s.id).stroke}
-                          strokeDasharray={style(s.id).dash}
-                          strokeWidth="2"
-                        />
-                      </svg>
-                      {s.name}
-                      {/* The line is only what answered, so a probe dropping
-                          half its packets draws like a healthy one. */}
-                      {s.loss > 0 && (
-                        <span className="tnum opacity-60">
-                          丢 {s.loss < 1 ? "<1" : Math.round(s.loss)}%
-                        </span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
+          <ResourceSkeleton />
         )
-      ) : data.metrics.length === 0 ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">这段时间没有历史数据</p>
       ) : (
-        <div className="grid gap-x-10 gap-y-7 lg:grid-cols-2 lg:[&>*:last-child:nth-child(even)]:col-span-2">
-          {/* The window as one strip, left to right: green where the node was
-              reporting throughout, amber where for part of the slice, red where
-              not at all. A slice here is many of the chart's points, so an
-              outage too short to break a line below still leaves its mark. */}
-          {availability && (
-            <div className="lg:col-span-2">
-              <h4 className="mb-2 flex items-baseline justify-between gap-3 text-xs font-medium text-muted-foreground">
-                <span>在线率</span>
-                <span className={`tnum ${availability.up < 0.99 ? "text-warn" : ""}`}>
-                  {/* Floored, never rounded up: a window with one minute away
-                      must not read 100%. */}
-                  {(Math.floor(availability.up * 10000) / 100).toFixed(2)}%
-                </span>
-              </h4>
-              <div className="flex h-6 gap-px">
-                {availability.slices.map((s) => (
-                  <span
-                    key={s.from}
-                    title={`${clock(s.from)} – ${clock(s.to)} · ${(Math.floor(s.up * 1000) / 10).toFixed(1)}%`}
-                    className={`min-w-0 flex-1 rounded-[1px] ${
-                      s.up >= 0.999 ? "bg-online/70" : s.up > 0 ? "bg-warn" : "bg-hot"
-                    }`}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+        // The last answer stays on screen while the next is in flight, dimmed
+        // so the reader can tell it is about to change.
+        <div aria-busy={stale} className={`transition-opacity duration-300 ${stale ? "opacity-60" : ""}`}>
+          {failed ? (
+            <p className="py-8 text-center text-sm text-destructive" role="alert">
+              读取历史数据失败：{failed}
+              <button className="ml-2 underline" onClick={() => setAttempt((n) => n + 1)}>重试</button>
+            </p>
+          ) : tab === "latency" ? (
+            pingSeries.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">这段时间没有延迟数据</p>
+            ) : (
+              // An explicit pixel height on the column, so the chart can be
+              // `flex-1` within it while the legend takes what it needs: four
+              // probes are one row of chips on a desktop and two on a phone, so
+              // any fixed reservation is wrong on one of them.
+              <div
+                ref={column}
+                style={columnStyle}
+                className="flex min-h-72 flex-col gap-3">
+                {/* `min-h-0` is what makes `flex-1` a real number rather than
+                    the content's own height: ResponsiveContainer reads its
+                    parent, and a flex child not told it may shrink reports
+                    whatever the SVG last was. The column above has a height in
+                    pixels, so this resolves at layout instead of coming back 0. */}
+                <div className="min-h-0 w-full flex-1 text-muted-foreground">
+                  {shownProbes.length === 0 ? (
+                    <p className="py-8 text-center text-sm">没有选中任何探测</p>
+                  ) : (
+                    <LatencyChart
+                      rows={pingRows}
+                      probes={shownProbes}
+                      style={style}
+                      spread={spread}
+                      smooth={smooth}
+                      zoom={zoom}
+                      hours={hours}
+                      onZoom={setZoom}
+                    />
+                  )}
+                </div>
 
-          {/* The line is the bucket's mean. Behind it, the band reaches the
-              highest reading within the bucket: a minute pinned at 100% is a
-              sixtieth of an hour's mean, and would otherwise leave no trace on a
-              month's chart. */}
-          <Panel title={peak.cpu === null ? "CPU" : `CPU · 峰值 ${peak.cpu.toFixed(1)}%`}>
-            <ResponsiveContainer>
-              <ComposedChart data={chartRows}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis {...timeAxis(chartRows)} />
-                <YAxis {...axes.cpu} unit="%" {...VALUE_AXIS} />
-                <Tooltip
-                  {...TOOLTIP}
-                  formatter={(v, _name, item) => {
-                    const top = item?.payload?.cpu_max
-                    const mean = `${Number(v).toFixed(1)}%`
-                    return [top === undefined ? mean : `均值 ${mean} · 峰值 ${Number(top).toFixed(1)}%`, "CPU"]
-                  }}
-                />
-                <Area dataKey="cpu_band" stroke="var(--color-ink)" fill="var(--color-ink)" {...PEAK_BAND} />
-                <Area dataKey="cpu" name="CPU" stroke="var(--color-ink)" fill="var(--color-ink)" fillOpacity={0.12} {...RESOURCE_SERIES} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </Panel>
-
-          {/* The axis top is the machine's memory, so the line's height is the
-              fraction in use whatever range is picked. Tracking the window's
-              own maximum, which is what an area chart does by default, puts
-              127 MB of a 457 MB box at the top of the panel. The size is in the
-              title because the axis top is claiming it. Swap is a line across
-              the same panel: it matters when memory is short, which is where
-              the two are read together. */}
-          <Panel
-            title={`内存 · ${bytes(node.mem_total)}${has.swap ? ` · Swap ${bytes(node.swap_total)}` : ""}`}
-            keys={has.swap ? [{ label: "内存", color: "var(--color-chart-1)" }, { label: "Swap", color: "var(--color-chart-3)", dash: true }] : undefined}
-          >
-            <ResponsiveContainer>
-              <ComposedChart data={chartRows}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis {...timeAxis(chartRows)} />
-                <YAxis {...axes.mem} tickFormatter={axisBytes} {...VALUE_AXIS} />
-                <Tooltip {...TOOLTIP} formatter={(v) => bytes(Number(v))} />
-                <Area dataKey="mem_used" name="内存" stroke="var(--color-chart-1)" fill="var(--color-chart-1)" fillOpacity={0.15} {...RESOURCE_SERIES} />
-                {has.swap && (
-                  <Line dataKey="swap_used" name="Swap" stroke="var(--color-chart-3)" strokeDasharray="5 3" {...RESOURCE_SERIES} />
+                {/* Under the chart: what it covers is picked at the top, what is
+                    drawn in it is picked here. Recharts paints the brush into the
+                    same SVG as the axis, so this is as close beneath as HTML
+                    sits. */}
+                {(pingSeries.length > 1 || pingSeries.some((s) => s.loss > 0)) && (
+                  <div className="flex flex-wrap items-center justify-center gap-1.5">
+                    {pingSeries.map((s) => {
+                      const shown = !hiddenProbes.includes(s.id)
+                      return (
+                        <button
+                          key={s.id}
+                          aria-pressed={shown}
+                          onClick={() =>
+                            setHiddenProbes((h) => (shown ? [...h, s.id] : h.filter((id) => id !== s.id)))
+                          }
+                          className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-opacity ${
+                            shown ? "" : "opacity-40"
+                          }`}
+                        >
+                          {/* The swatch carries the same colour and dash as the line. */}
+                          <svg width="14" height="6" className="shrink-0" aria-hidden>
+                            <line
+                              x1="0"
+                              y1="3"
+                              x2="14"
+                              y2="3"
+                              stroke={style(s.id).stroke}
+                              strokeDasharray={style(s.id).dash}
+                              strokeWidth="2"
+                            />
+                          </svg>
+                          {s.name}
+                          {/* The line is only what answered, so a probe dropping
+                              half its packets draws like a healthy one. */}
+                          {s.loss > 0 && (
+                            <span className="tnum opacity-60">
+                              丢 {s.loss < 1 ? "<1" : Math.round(s.loss)}%
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
                 )}
-              </ComposedChart>
-            </ResponsiveContainer>
-          </Panel>
-
-          {/* A rate has no total to be a fraction of, and its range spans orders
-              of magnitude: a week of one node runs from 0.2 KB/s idle to bursts
-              of 70 MB/s. Fitted to the bursts, a linear axis would draw the
-              median minute less than a pixel above the floor on seven of nine
-              nodes at the day window, so this one is logarithmic, each tenfold
-              step the same height.
-
-              The line is the bucket's mean, so it integrates to the traffic
-              totals, and a 15-second speed test averaged over its minute draws
-              at a quarter of the rate it ran at. The band behind it reaches the
-              highest rate measured within the bucket. Its lower edge lies under
-              the line. */}
-          <Panel
-            title={peak.net ? `网络 · 峰值 ↓ ${rate(peak.net.rx)} ↑ ${rate(peak.net.tx)}` : "网络"}
-            keys={[{ label: "下行", color: "var(--color-rx)" }, { label: "上行", color: "var(--color-tx)" }]}
-          >
-            <ResponsiveContainer>
-              <ComposedChart data={chartRows}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis {...timeAxis(chartRows)} />
-                <YAxis scale="log" {...axes.rate} tickFormatter={axisBytes} unit="/s" {...VALUE_AXIS} />
-                <Tooltip
-                  {...TOOLTIP}
-                  // The hub's figures rather than `v`, which is lifted to the
-                  // axis floor.
-                  formatter={(_, name, item) => {
-                    const mean = item?.payload?.[`net_${item.dataKey}`]
-                    const top = item?.payload?.[`net_${item.dataKey}_max`]
-                    return [top === undefined ? rate(mean) : `均值 ${rate(mean)} · 峰值 ${rate(top)}`, name]
-                  }}
-                />
-                {/* Water for what comes in, the koi's red for what goes out. */}
-                {[
-                  { key: "rx", stroke: "var(--color-rx)" },
-                  { key: "tx", stroke: "var(--color-tx)" },
-                ].map((s) => (
-                  <Area key={s.key} dataKey={`${s.key}_band`} stroke={s.stroke} fill={s.stroke} {...PEAK_BAND} />
-                ))}
-                <Line dataKey="rx" name="下行" stroke="var(--color-rx)" {...RESOURCE_SERIES} />
-                <Line dataKey="tx" name="上行" stroke="var(--color-tx)" {...RESOURCE_SERIES} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </Panel>
-
-          {/* The disk it is filling, for the same reason as memory: a node
-              using 2.7% of its disk draws along the top of the panel when the
-              axis tracks the window's own maximum. */}
-          <Panel title={`硬盘 · ${bytes(node.disk_total)}`}>
-            <ResponsiveContainer>
-              <ComposedChart data={chartRows}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis {...timeAxis(chartRows)} />
-                <YAxis domain={[0, node.disk_total]} ticks={quarters(node.disk_total)} tickFormatter={axisBytes} {...VALUE_AXIS} />
-                <Tooltip {...TOOLTIP} formatter={(v) => bytes(Number(v))} />
-                <Area dataKey="disk_used" name="硬盘" stroke="var(--color-chart-4)" fill="var(--color-chart-4)" fillOpacity={0.15} {...RESOURCE_SERIES} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </Panel>
-
-          {/* Open sockets and running processes, each bucket's average. Only a
-              hub that keeps them in history has this panel. */}
-          {has.counts && (
-            <Panel
-              title="连接与进程"
-              keys={[{ label: "TCP", color: "var(--color-chart-1)" }, { label: "UDP", color: "var(--color-chart-3)", dash: true }, { label: "进程", color: "var(--color-ink)", dash: true }]}
-            >
-              <ResponsiveContainer>
-                <ComposedChart data={chartRows}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                  <XAxis {...timeAxis(chartRows)} />
-                  <YAxis {...axes.counts} tickFormatter={(v: number) => (v % 1 ? v.toFixed(1) : String(v))} {...VALUE_AXIS} />
-                  <Tooltip {...TOOLTIP} />
-                  <Line dataKey="tcp" name="TCP" stroke="var(--color-chart-1)" {...RESOURCE_SERIES} />
-                  <Line dataKey="udp" name="UDP" stroke="var(--color-chart-3)" strokeDasharray="5 3" {...RESOURCE_SERIES} />
-                  <Line dataKey="procs" name="进程" stroke="var(--color-ink)" strokeDasharray="2 3" {...RESOURCE_SERIES} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </Panel>
+              </div>
+            )
+          ) : data.metrics.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">这段时间没有历史数据</p>
+          ) : (
+            <ResourceCharts
+              rows={chartRows}
+              axes={axes}
+              peak={peak}
+              has={has}
+              availability={availability}
+              hours={hours}
+              memTotal={node.mem_total}
+              swapTotal={node.swap_total}
+              diskTotal={node.disk_total}
+            />
           )}
         </div>
       )}
     </div>
   )
 }
+
+// The resource panels' grid, so the placeholder can take its shape.
+const RESOURCE_GRID = "grid gap-x-10 gap-y-7 lg:grid-cols-2 lg:[&>*:last-child:nth-child(even)]:col-span-2"
+
+/**
+ * What stands in for the resource panels on the first load, at their height: an
+ * `h-40` bar in place of five panels moved the page by 530px when they arrived.
+ * The strip and five panels, each a title line over a 160px chart.
+ */
+function ResourceSkeleton() {
+  return (
+    <div className={RESOURCE_GRID} aria-busy>
+      <Skeleton className="h-[49px] lg:col-span-2" />
+      {Array.from({ length: 5 }, (_, i) => (
+        <Skeleton key={i} className="h-[187px]" />
+      ))}
+    </div>
+  )
+}
+
+type Rows = { ts: number }[]
+type Axis = { domain: number[]; ticks: number[] }
+type Availability = { up: number; slices: { up: number; from: number; to: number }[] } | null
+
+/**
+ * The resource panels. Memoised, and given only values memoised on the history
+ * and plain numbers, so the live push every two seconds -- a new `node` with the
+ * same totals -- re-renders the facts above and not these: redrawn, the five
+ * charts cost 85ms and then 300ms more inside recharts' own frame at six hours,
+ * and twice that at a day, most of it the dot test run for every point.
+ */
+const ResourceCharts = memo(function ResourceCharts({
+  rows, axes, peak, has, availability, hours, memTotal, swapTotal, diskTotal,
+}: {
+  rows: Rows
+  axes: { cpu: Axis; mem: Axis; counts: Axis; rate: Axis }
+  peak: { cpu: number | null; net: { rx: number; tx: number } | null }
+  has: { swap: boolean; counts: boolean }
+  availability: Availability
+  hours: number
+  memTotal: number
+  swapTotal: number
+  diskTotal: number
+}) {
+  const time = useMemo(() => timeAxis(rows, hours), [rows, hours])
+  const disk = useMemo(() => ({ domain: [0, diskTotal], ticks: quarters(diskTotal) }), [diskTotal])
+  const clock = clockFor(hours)
+
+  return (
+    <div className={RESOURCE_GRID}>
+      {/* The window as one strip, left to right: green where the node was
+          reporting throughout, amber where for part of the slice, a muted red
+          where not at all -- muted, or a node offline for the whole window is
+          a wall of alarm on a page already saying so. A slice here is many of
+          the chart's points, so an outage too short to break a line below
+          still leaves its mark. */}
+      {availability && (
+        <div className="lg:col-span-2">
+          <h4 className="mb-2 flex items-baseline justify-between gap-3 text-xs font-medium text-muted-foreground">
+            <span>在线率</span>
+            <span className={`tnum ${availability.up < 0.99 ? "text-warn" : ""}`}>
+              {/* Floored, never rounded up: a window with one minute away
+                  must not read 100%. */}
+              {(Math.floor(availability.up * 10000) / 100).toFixed(2)}%
+            </span>
+          </h4>
+          <div className="flex h-6 gap-px">
+            {availability.slices.map((s) => (
+              <span
+                key={s.from}
+                title={`${clock(s.from)} – ${clock(s.to)} · ${(Math.floor(s.up * 1000) / 10).toFixed(1)}%`}
+                className={`min-w-0 flex-1 rounded-[1px] ${
+                  s.up >= 0.999 ? "bg-online/55" : s.up > 0 ? "bg-warn" : "bg-hot/35"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* The line is the bucket's mean. Behind it, the band reaches the
+          highest reading within the bucket: a minute pinned at 100% is a
+          sixtieth of an hour's mean, and would otherwise leave no trace on a
+          month's chart. */}
+      <Panel title={peak.cpu === null ? "CPU" : `CPU · 峰值 ${peak.cpu.toFixed(1)}%`}>
+        <ResponsiveContainer>
+          <ComposedChart data={rows}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+            <XAxis {...time} />
+            <YAxis {...axes.cpu} unit="%" {...VALUE_AXIS} />
+            <Tooltip {...TOOLTIP} formatter={cpuTip} />
+            <Area dataKey="cpu_band" stroke="var(--color-ink)" fill="var(--color-ink)" {...CPU_PEAK_BAND} />
+            <Area dataKey="cpu" name="CPU" stroke="var(--color-ink)" fill="var(--color-ink)" fillOpacity={0.12} {...RESOURCE_SERIES} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </Panel>
+
+      {/* The axis is anchored on the machine's memory, so the line's height is
+          the fraction in use whatever range is picked. Tracking the window's
+          own maximum, which is what an area chart does by default, puts 127 MB
+          of a 457 MB box at the top of the panel. The top is the memory rounded
+          up to the next gridline, so the ticks are whole sizes; the exact size
+          is in the title. Swap is a line across the same panel: it matters
+          when memory is short, which is where the two are read together. */}
+      <Panel
+        title={`内存 · ${bytes(memTotal)}${has.swap ? ` · Swap ${bytes(swapTotal)}` : ""}`}
+        keys={has.swap ? [{ label: "内存", color: "var(--color-chart-1)" }, { label: "Swap", color: "var(--color-chart-3)", dash: true }] : undefined}
+      >
+        <ResponsiveContainer>
+          <ComposedChart data={rows}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+            <XAxis {...time} />
+            <YAxis {...axes.mem} tickFormatter={axisBytes} {...VALUE_AXIS} />
+            <Tooltip {...TOOLTIP} formatter={bytesTip} />
+            <Area dataKey="mem_used" name="内存" stroke="var(--color-chart-1)" fill="var(--color-chart-1)" fillOpacity={0.15} {...RESOURCE_SERIES} />
+            {has.swap && (
+              <Line dataKey="swap_used" name="Swap" stroke="var(--color-chart-3)" strokeDasharray="5 3" {...RESOURCE_SERIES} />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </Panel>
+
+      {/* A rate has no total to be a fraction of, and its range spans orders
+          of magnitude: a week of one node runs from 0.2 KB/s idle to bursts
+          of 70 MB/s. Fitted to the bursts, a linear axis would draw the
+          median minute less than a pixel above the floor on seven of nine
+          nodes at the day window, so this one is logarithmic, each tenfold
+          step the same height.
+
+          The line is the bucket's mean, so it integrates to the traffic
+          totals, and a 15-second speed test averaged over its minute draws
+          at a quarter of the rate it ran at. The band behind it reaches the
+          highest rate measured within the bucket. Its lower edge lies under
+          the line. */}
+      <Panel
+        title={peak.net ? `网络 · 峰值 ↓ ${rate(peak.net.rx)} ↑ ${rate(peak.net.tx)}` : "网络"}
+        keys={[{ label: "下行", color: "var(--color-rx)" }, { label: "上行", color: "var(--color-tx)" }]}
+      >
+        <ResponsiveContainer>
+          <ComposedChart data={rows}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+            <XAxis {...time} />
+            <YAxis scale="log" {...axes.rate} tickFormatter={axisBytes} unit="/s" {...VALUE_AXIS} />
+            <Tooltip {...TOOLTIP} formatter={rateTip} />
+            {/* Water for what comes in, the koi's red for what goes out. */}
+            <Area dataKey="rx_band" stroke="var(--color-rx)" fill="var(--color-rx)" {...PEAK_BAND} />
+            <Area dataKey="tx_band" stroke="var(--color-tx)" fill="var(--color-tx)" {...PEAK_BAND} />
+            <Line dataKey="rx" name="下行" stroke="var(--color-rx)" {...RESOURCE_SERIES} />
+            <Line dataKey="tx" name="上行" stroke="var(--color-tx)" {...RESOURCE_SERIES} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </Panel>
+
+      {/* The disk it is filling, for the same reason as memory: a node
+          using 2.7% of its disk draws along the top of the panel when the
+          axis tracks the window's own maximum. */}
+      <Panel title={`硬盘 · ${bytes(diskTotal)}`}>
+        <ResponsiveContainer>
+          <ComposedChart data={rows}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+            <XAxis {...time} />
+            <YAxis {...disk} tickFormatter={axisBytes} {...VALUE_AXIS} />
+            <Tooltip {...TOOLTIP} formatter={bytesTip} />
+            <Area dataKey="disk_used" name="硬盘" stroke="var(--color-chart-4)" fill="var(--color-chart-4)" fillOpacity={0.15} {...RESOURCE_SERIES} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </Panel>
+
+      {/* Open sockets and running processes, each bucket's average. Only a
+          hub that keeps them in history has this panel. */}
+      {has.counts && (
+        <Panel
+          title="连接与进程"
+          keys={[{ label: "TCP", color: "var(--color-chart-1)" }, { label: "UDP", color: "var(--color-chart-3)", dash: true }, { label: "进程", color: "var(--color-ink)", dash: true }]}
+        >
+          <ResponsiveContainer>
+            <ComposedChart data={rows}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+              <XAxis {...time} />
+              <YAxis {...axes.counts} tickFormatter={countTick} {...VALUE_AXIS} />
+              <Tooltip {...TOOLTIP} />
+              <Line dataKey="tcp" name="TCP" stroke="var(--color-chart-1)" {...RESOURCE_SERIES} />
+              <Line dataKey="udp" name="UDP" stroke="var(--color-chart-3)" strokeDasharray="5 3" {...RESOURCE_SERIES} />
+              <Line dataKey="procs" name="进程" stroke="var(--color-ink)" strokeDasharray="2 3" {...RESOURCE_SERIES} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </Panel>
+      )}
+    </div>
+  )
+})
+
+type Probe = { id: number; name: string }
+
+/**
+ * The latency chart, memoised for the same reason as the resource panels: a
+ * live push redraws it only when what it draws has changed. Dragging the brush
+ * does change it, as the axis reticks for the span in view.
+ */
+const LatencyChart = memo(function LatencyChart({
+  rows, probes, style, spread, smooth, zoom, hours, onZoom,
+}: {
+  rows: Rows
+  probes: Probe[]
+  style: (id: number) => (typeof PALETTE)[number]
+  spread: boolean
+  smooth: boolean
+  zoom: [number, number] | null
+  hours: number
+  onZoom: (span: [number, number]) => void
+}) {
+  const last = rows.length - 1
+  const time = useMemo(
+    () => timeAxis(rows, hours, Math.min(zoom?.[0] ?? 0, last), Math.min(zoom?.[1] ?? last, last)),
+    [rows, hours, zoom, last],
+  )
+  const brushed = useCallback(
+    (r: { startIndex?: number; endIndex?: number }) => onZoom([r.startIndex ?? 0, r.endIndex ?? last]),
+    [onZoom, last],
+  )
+
+  return (
+    <ResponsiveContainer>
+      <ComposedChart data={rows}>
+        <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+        <XAxis {...time} />
+        {/* Not anchored at zero: these lines live in a narrow band far from
+            it, and zero flattens every wobble. */}
+        {spread ? (
+          <YAxis unit="ms" width={52} scale="sqrt" domain={[0, "auto"]} {...AXIS} />
+        ) : (
+          <YAxis unit="ms" width={52} domain={["auto", "auto"]} {...AXIS} />
+        )}
+        <Tooltip {...TOOLTIP} formatter={latencyTip} />
+        {/* Behind the line, the range that bucket's answers spanned --
+            Smokeping's "smoke". At the day window a bucket moves 63 ms at the
+            90th percentile against the 25 ms the trend moves, so a line alone
+            draws the smaller of the two.
+
+            Only with one probe on screen: rendered for four, the bands overlap
+            into a fog and their extremes drag the axis from 165-385 out to
+            140-420. */}
+        {probes.length === 1 &&
+          probes.map((s) => (
+            <Area
+              key={`band${s.id}`}
+              dataKey={`${smooth ? "c" : "b"}${s.id}`}
+              stroke="none"
+              fill={style(s.id).stroke}
+              fillOpacity={0.16}
+              isAnimationActive={false}
+              tooltipType="none"
+              legendType="none"
+              connectNulls
+            />
+          ))}
+        {probes.map((s) => (
+          <Line
+            key={s.id}
+            dataKey={`${smooth ? "s" : "t"}${s.id}`}
+            name={s.name}
+            stroke={style(s.id).stroke}
+            strokeDasharray={style(s.id).dash}
+            {...SERIES}
+            connectNulls
+          />
+        ))}
+        {/* Drag either handle to zoom into a stretch of the trend. */}
+        <Brush
+          dataKey="ts"
+          height={22}
+          travellerWidth={8}
+          tickFormatter={clockFor(hours)}
+          fill="var(--muted)"
+          stroke="var(--ring)"
+          onChange={brushed}
+        />
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
+})

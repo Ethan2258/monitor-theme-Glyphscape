@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { memo, type ReactNode } from "react"
 
 import { cn } from "@/lib/utils"
 
@@ -11,8 +11,11 @@ const HOT = 90
  * One metric: name and percentage on top, bar in the middle, raw numbers
  * underneath. Ink on paper while there is room, since the length of the bar
  * carries the message; red once there is not.
+ *
+ * Memoised on its plain props: of a card's four, only those whose figures
+ * moved since the last push draw again.
  */
-export function Meter({ label, pct, foot, empty = "—" }: Props) {
+export const Meter = memo(function Meter({ label, pct, foot, empty = "—" }: Props) {
   // null means the metric has no ceiling to fill, so the bar stays empty rather
   // than reporting 0%. What replaces the percentage depends on the reason:
   // unknown for a node with no metrics, ∞ for a plan with no limit. The bar stops
@@ -27,13 +30,18 @@ export function Meter({ label, pct, foot, empty = "—" }: Props) {
           {pct === null ? empty : `${pct < 10 ? pct.toFixed(1) : pct.toFixed(0)}%`}
         </span>
       </div>
+      {/* Moved rather than resized: a transform eases on the compositor, where
+          a width would lay the page out again on every frame of every bar's
+          ease, each push. A full-length bar slid left out of the track, rather
+          than one scaled down, so its leading end keeps its round cap; the
+          track's own rounding clips the other end. */}
       <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className={cn("h-full rounded-full transition-[width] duration-500", hot ? "bg-hot" : "bg-foreground")}
-          style={{ width: `${filled}%` }}
+          className={cn("h-full w-full rounded-full transition-transform duration-500", hot ? "bg-hot" : "bg-foreground")}
+          style={{ transform: `translateX(${filled - 100}%)` }}
         />
       </div>
       <div className="tnum mt-1.5 truncate text-xs text-muted-foreground">{foot}</div>
     </div>
   )
-}
+})

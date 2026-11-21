@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react"
+import { memo, type CSSProperties } from "react"
 import { BackIcon, InIcon, OutIcon, TagIcon } from "@/components/icons"
 import {
   siAlmalinux, siAlpinelinux, siArchlinux, siCentos, siDebian, siFedora, siLinux, siOpensuse, siRedhat,
@@ -66,6 +66,17 @@ export function daysLeft(node: Node): number | null {
  * durations, so the badge keeps its shape either way.
  */
 export function Status({ node }: { node: Node }) {
+  return <StatusBadge {...statusOf(node)} />
+}
+
+type Tone = "online" | "offline" | "fresh"
+
+/**
+ * What the badge says, as plain values: the uptime moves every push, but the
+ * badge shows it in whole days, so most pushes leave these unchanged and the
+ * badge as it was.
+ */
+function statusOf(node: Node): { label: string; full: string | undefined; tone: Tone } {
   const down = sinceSeen(node)
   // Whole days once there are any: on a badge, "11 天" reads at a glance where
   // "11 天 3 小时" is a sentence. The full figure is on hover.
@@ -76,41 +87,52 @@ export function Status({ node }: { node: Node }) {
       ? `离线 ${down >= 60 ? short(down) : ""}`
       : "未接入"
   const full = node.online ? (node.metrics ? `已运行 ${uptime(node.metrics.uptime)}` : "已连上，等待上报") : deployed(node) && down >= 60 ? `离线 ${uptime(down)}` : undefined
+  return { label: label.trim(), full, tone: node.online ? "online" : deployed(node) ? "offline" : "fresh" }
+}
+
+const StatusBadge = memo(function StatusBadge({ label, full, tone }: { label: string; full: string | undefined; tone: Tone }) {
   return (
     // Muted once it stops reporting: the figures on the page are genuine, merely
     // no longer current.
     <Badge
       title={full}
-      className={cn("tnum shrink-0 gap-1.5 font-normal", !node.online && "text-muted-foreground")}
+      className={cn("tnum shrink-0 gap-1.5 font-normal", tone !== "online" && "text-muted-foreground")}
     >
       <span
         className={cn(
           "size-1.5 rounded-full",
-          node.online ? "bg-online" : deployed(node) ? "bg-offline" : "bg-muted-foreground/40",
+          tone === "online" ? "bg-online" : tone === "offline" ? "bg-offline" : "bg-muted-foreground/40",
         )}
       />
-      {label.trim()}
+      {label}
     </Badge>
   )
-}
+})
 
-/** Where the machine is: its flag, or the bare code for one the set lacks. */
-export function Country({ node }: { node: Node }) {
-  if (!node.country) return null
-  if (hasFlag(node.country)) return <Flag code={node.country} />
-  return (
-    <Badge className="shrink-0 font-normal text-muted-foreground">
-      {node.country}
-    </Badge>
-  )
-}
+/**
+ * Where the machine is: its flag, or the bare code for one the set lacks.
+ * Compared on the country alone, since the node it is handed is a new object
+ * whenever any figure of it moves.
+ */
+export const Country = memo(
+  function Country({ node }: { node: Node }) {
+    if (!node.country) return null
+    if (hasFlag(node.country)) return <Flag code={node.country} />
+    return (
+      <Badge className="shrink-0 font-normal text-muted-foreground">
+        {node.country}
+      </Badge>
+    )
+  },
+  (a, b) => a.node.country === b.node.country,
+)
 
 /**
  * The distribution's logo in its brand colour, standing in for the name, which
  * shows on hover. Mixed toward white on the dark theme, where AlmaLinux's black
  * and CentOS's navy would otherwise vanish.
  */
-function OsIcon({ os }: { os: string }) {
+const OsIcon = memo(function OsIcon({ os }: { os: string }) {
   const name = os.toLowerCase()
   const icon = DISTROS.find(([key]) => name.includes(key))?.[1] ?? siLinux
   return (
@@ -124,7 +146,7 @@ function OsIcon({ os }: { os: string }) {
       <path d={icon.path} />
     </svg>
   )
-}
+})
 
 // Traffic uses the plan's own counting rule, so the bar matches the quota the
 // node is billed against.
@@ -137,8 +159,7 @@ function trafficFoot(node: Node) {
 // No date means nothing expires: a permanent host, or one with no renewal set. A
 // blank corner asserts neither. Past the date is the page's red; within a week
 // of it, the amber before the red.
-function Expiry({ node }: { node: Node }) {
-  const days = daysLeft(node)
+function Expiry({ days }: { days: number | null }) {
   if (days === null) return <span className="text-xs text-muted-foreground" title="没有到期日">长期</span>
   const tone = days < 0 ? "text-hot" : days <= 7 ? "text-warn" : "text-muted-foreground"
   return (
@@ -155,10 +176,17 @@ function Expiry({ node }: { node: Node }) {
  * the original on hover. On the right, what the days until expiry are worth,
  * in that same currency, so every card's figure compares with the next.
  */
-function Price({ node, rates, primary }: { node: Node; rates: Rates; primary: "CNY" | "USD" }) {
-  const days = daysLeft(node)
+const Price = memo(function Price({ price, currency, billing_cycle, days, rates, primary }: {
+  price: number
+  currency: string
+  billing_cycle: string
+  days: number | null
+  rates: Rates
+  primary: "CNY" | "USD"
+}) {
+  const node = { price, currency, billing_cycle }
   const left = remaining(node, days)
-  const code = node.currency.toUpperCase()
+  const code = currency.toUpperCase()
   const pick = (both: { cny: number; usd: number }) => (primary === "CNY" ? money(both.cny, "CNY") : money(both.usd, "USD"))
   const billed = node.price > 0 && code !== "CNY" && code !== "USD" ? convert(node.price, code, rates) : null
   const worth = left === null ? null : convert(left, code, rates)
@@ -189,21 +217,75 @@ function Price({ node, rates, primary }: { node: Node; rates: Rates; primary: "C
       )}
     </div>
   )
-}
+})
 
-export function NodeCard({ node, price, rates, primary, onOpen }: {
+/**
+ * Who and where the node is, and its state: the card's head, compared on the
+ * plain values it shows, so the pushes that move only the figures below leave
+ * it as it was.
+ */
+const CardHead = memo(function CardHead({ node, name, os, virt, arch, days, status }: {
+  /** For the flag, which reads its country alone. */
+  node: Node
+  name: string
+  os: string
+  virt: string
+  arch: string
+  days: number | null
+  status: ReturnType<typeof statusOf>
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Country node={node} />
+          <h3 className="truncate font-medium" title={name}>{name}</h3>
+        </div>
+        <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+          {os && <OsIcon os={os} />}
+          <span className="truncate">
+            {os ? [virt !== "none" && virt, arch].filter(Boolean).join(" · ") : "等待首次上报"}
+          </span>
+        </p>
+      </div>
+      {/* State right, identity left, one line each. */}
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <StatusBadge {...status} />
+        <Expiry days={days} />
+      </div>
+    </div>
+  )
+}, (a, b) =>
+  a.node.country === b.node.country && a.name === b.name && a.os === b.os && a.virt === b.virt && a.arch === b.arch &&
+  a.days === b.days && a.status.label === b.status.label && a.status.full === b.status.full && a.status.tone === b.status.tone)
+
+/**
+ * One node, as a card. Memoised: the list hands it the node object the last
+ * push left unchanged (see reuseNodes) and one onOpen for every card, taking the
+ * id, so a card whose node did not move is skipped outright, and one whose did
+ * draws again only the parts that changed.
+ */
+export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, primary, onOpen }: {
   node: Node
   /** Whether to draw the price row: the operator's setting, and some node having a price. */
   price: boolean
+  /**
+   * Whether any card beside it carries a remark: if so every card keeps the
+   * remark's line, empty or not, so the meters of a row of cards line up.
+   */
+  remarks: boolean
   rates: Rates
   primary: "CNY" | "USD"
-  onOpen: () => void
+  onOpen: (id: number) => void
 }) {
   const m = node.metrics
+  const days = daysLeft(node)
 
   return (
     <Card
-      onClick={onOpen}
+      onClick={() => onOpen(node.id)}
+      // Where the page returns focus on coming back from this node's page.
+      data-node={node.id}
       // min-w-0: a grid item sizes to its content unless told otherwise, and the
       // OS line below does not wrap, so on a phone the card would grow past its
       // column and scroll the page sideways. The truncate inside only takes effect
@@ -216,34 +298,30 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
       )}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(node.id))}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <Country node={node} />
-            <h3 className="truncate font-medium" title={node.name}>{node.name}</h3>
-          </div>
-          <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-            {node.os && <OsIcon os={node.os} />}
-            <span className="truncate">
-              {node.os
-                ? [node.virt !== "none" && node.virt, node.arch].filter(Boolean).join(" · ")
-                : "等待首次上报"}
-            </span>
-          </p>
-        </div>
-        {/* State right, identity left, one line each. */}
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <Status node={node} />
-          <Expiry node={node} />
-        </div>
-      </div>
+      <CardHead
+        node={node}
+        name={node.name}
+        os={node.os}
+        virt={node.virt}
+        arch={node.arch}
+        days={days}
+        status={statusOf(node)}
+      />
 
       {/* What the operator wants a visitor to know about this node, in their
-          words. Plain text, one line; the whole of it is on the node's page. */}
-      {node.public_remark && (
-        <p className="mt-2 truncate text-xs text-muted-foreground" title={node.public_remark}>
+          words. Plain text, one line; the whole of it is on the node's page.
+          The line is kept, empty, on a card without one while another card
+          has one, or the meters below would sit a line lower on that card
+          than on its neighbours. */}
+      {(node.public_remark || remarks) && (
+        <p
+          // A phone shows one card a row, with no neighbour to line up with.
+          className={cn("mt-2 h-4 truncate text-xs text-muted-foreground", !node.public_remark && "max-sm:hidden")}
+          title={node.public_remark || undefined}
+          aria-hidden={node.public_remark ? undefined : true}
+        >
           {node.public_remark}
         </p>
       )}
@@ -252,16 +330,10 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
           cores, memory, disk size and traffic totals, and showing those with
           the live figures blank beats a stretched card with one line in it. */}
       {deployed(node) ? (
-        <div className="relative flex flex-1 flex-col">
-          {/* The last figures it reported, faded, with how long it has been
-              gone set over them. */}
-          {!node.online && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-              <span className="tnum rounded-full border border-hot/40 bg-card px-3 py-1 text-xs font-medium text-hot shadow-xs">
-                离线
-              </span>
-            </div>
-          )}
+        <div className="flex flex-1 flex-col">
+          {/* The last figures it reported, faded. The badge already says it is
+              offline, and the card's red edge marks it; a label set over the
+              figures would hide the very ones still worth reading. */}
           <div className={cn("flex flex-1 flex-col", !node.online && "opacity-35")}>
           <div className="mt-4 mb-4 grid grid-cols-2 gap-x-4 gap-y-4">
             {/* The core count belongs beside the word CPU: it is what the
@@ -308,7 +380,16 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
             </span>
           </div>
           </div>
-          {price && <Price node={node} rates={rates} primary={primary} />}
+          {price && (
+            <Price
+              price={node.price}
+              currency={node.currency}
+              billing_cycle={node.billing_cycle}
+              days={days}
+              rates={rates}
+              primary={primary}
+            />
+          )}
         </div>
       ) : (
         /* Never connected: nothing to plot, so the card stays short rather than
@@ -319,7 +400,7 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
       )}
     </Card>
   )
-}
+})
 
 /**
  * A node's name and state, large, at the head of its page: on the water above
@@ -328,13 +409,19 @@ export function NodeCard({ node, price, rates, primary, onOpen }: {
  */
 export function NodeHead({ node, onBack }: { node: Node; onBack: () => void }) {
   return (
-    <section data-pond-avoid="" data-pond-dim="box" data-sky-dim="" className="relative mx-auto w-full max-w-[1320px] px-4 pt-2 pb-10 sm:px-6 lg:pt-4 lg:pb-12 [.isolate:has(>.realm)_&]:pb-32 lg:[.isolate:has(>.realm)_&]:pb-36">
+    <section data-pond-avoid="" data-pond-dim="box" data-sky-dim="" className="relative mx-auto w-full max-w-[1320px] px-4 pt-2 pb-10 transition-[padding] duration-[560ms] ease-[cubic-bezier(.37,0,.63,1)] sm:px-6 lg:pt-4 lg:pb-12 [.isolate:has(>.realm)_&]:pb-32 lg:[.isolate:has(>.realm)_&]:pb-36">
       <button onClick={onBack} className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
         <BackIcon className="size-4" /> 全部节点
       </button>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex min-w-0 items-center gap-3">
-          <Country node={node} />
+        {/* Top-aligned, the flag set on the first line's middle: centred, it
+            would hang between the lines of a name that wraps on a phone. */}
+        <div className="flex min-w-0 items-start gap-3">
+          {node.country && (
+            <span className="mt-2.5 flex shrink-0 sm:mt-3.5">
+              <Country node={node} />
+            </span>
+          )}
           <h1 className="min-w-0 text-2xl font-medium tracking-tight break-words sm:text-4xl">{node.name}</h1>
         </div>
         <Status node={node} />

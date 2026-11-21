@@ -29,7 +29,7 @@ function Wake({ ids }: { ids: number[] }) {
   if (history.length < 6) {
     return (
       <div className="mt-4">
-        <div className="flex h-14 items-end">
+        <div className="flex h-8 items-end sm:h-14">
           <div className="w-full border-t border-dashed border-muted-foreground/40" />
         </div>
         <div className="mt-1 text-[11px] text-muted-foreground">正在记录最近两分钟的网速…</div>
@@ -170,13 +170,13 @@ function Overview({ nodes, cost, rates, primary, onOpen }: {
               <button
                 type="button"
                 onClick={() => onOpen(busiest.id)}
-                className="min-w-0 cursor-pointer truncate text-foreground underline-offset-4 hover:underline"
+                className="min-w-0 max-w-[16rem] cursor-pointer truncate text-foreground underline-offset-4 hover:underline"
                 title={`查看 ${busiest.name} 详情`}
               >
                 {busiest.name}
               </button>
             ) : (
-              <span className="min-w-0 truncate text-foreground">{busiest.name}</span>
+              <span className="min-w-0 max-w-[16rem] truncate text-foreground">{busiest.name}</span>
             )}
             <span className={cn("tnum shrink-0", busiest.metrics.cpu >= 90 && "text-hot")}>{busiest.metrics.cpu.toFixed(1)}%</span>
           </span>
@@ -275,7 +275,7 @@ export function Hero({ nodes, scope, region, onRegion, onOpen, summary, globe, c
   return (
     <section
       className={cn(
-        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-16 gap-y-10 px-4 pt-4 pb-16 sm:px-6 lg:pt-6 lg:pb-16 [.isolate:has(>.realm:not([hidden]))_&]:pb-36 lg:[.isolate:has(>.realm:not([hidden]))_&]:pb-40",
+        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-16 gap-y-10 px-4 pt-4 pb-16 sm:px-6 lg:pt-6 lg:pb-16 transition-[padding] duration-[560ms] ease-[cubic-bezier(0.37,0,0.63,1)] [.isolate:has(>.realm:not([hidden]))_&]:pb-36 lg:[.isolate:has(>.realm:not([hidden]))_&]:pb-40",
         summary && showGlobe && "lg:grid-cols-[minmax(0,1fr)_auto]",
       )}
     >
