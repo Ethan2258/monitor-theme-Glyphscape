@@ -3,21 +3,17 @@ import { setRealmTheme } from "@/lib/realm"
 import { hush } from "@/lib/still"
 
 /**
- * The page's palette, and how it changes: everything blends from one to the
- * other at once, and a few rings spread on the water from the toggle.
+ * The page's palette, and how it changes: the page switches at once under a
+ * snapshot of how it looked, and the snapshot fades away over FADE -- opacity
+ * only, on the compositor (`.palette-swap`, index.css) -- while a few rings
+ * spread on the water from the toggle.
  *
- * No view transition, no mask, no wipe. The colour tokens are registered as colours
- * (`@property`, see index.css), so the root's own transition carries them from
- * the old values to the new over FADE, and every surface that reads them --
- * page, cards, text, charts -- follows in step. The pond cross-fades over the
- * same time and the same ease-in-out sine while the fish swim on (lib/pond.ts),
- * and the toggle drops a stone in it. Switching again mid-way turns round from
- * where it has got to.
- *
- * On phones and touch screens the blend is too dear: every frame restyles the
- * whole page (about 8 fps on a mid-range phone). There the page switches at once
- * under a snapshot of how it looked, and the snapshot fades away -- opacity only,
- * on the compositor -- over the same time and ease (`.palette-swap`, index.css).
+ * Measured against blending the colour tokens themselves (registered with
+ * `@property`, see index.css), which restyles the whole page on every frame:
+ * on a laptop with a discrete GPU the blend ran at 97-106 fps against 155 for
+ * the snapshot, whose one longer frame comes before anything moves; on a phone
+ * the blend ran at about 8 fps. The blend remains where view transitions do not
+ * exist; there the pond cross-fades over the same time and ease (lib/pond.ts).
  *
  * With reduced motion it switches at once.
  */
@@ -32,8 +28,6 @@ type Point = { x: number; y: number }
 
 let fading: ReturnType<typeof setTimeout> | undefined
 
-// Where the token blend costs too much: a coarse pointer or a phone's width.
-const slight = matchMedia("(pointer: coarse), (max-width: 767px)")
 
 /** Switches `toggle` in at once, everything held still. */
 function atOnce(toggle: () => void) {
@@ -48,12 +42,12 @@ function atOnce(toggle: () => void) {
 }
 
 /**
- * The phone's way: `toggle` applied at once inside a view transition, so the
+ * The snapshot way: `toggle` applied at once inside a view transition, so the
  * old page fades out over the new one. False where it does not apply, and the
  * caller blends instead.
  */
 function crossFade(toggle: () => void): boolean {
-  if (!slight.matches || typeof document.startViewTransition !== "function") return false
+  if (typeof document.startViewTransition !== "function") return false
   root.classList.add("palette-swap")
   const swap = document.startViewTransition(() => atOnce(toggle))
   void swap.finished.finally(() => root.classList.remove("palette-swap"))

@@ -382,7 +382,27 @@
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* The palette change on phones (lib/palette.ts): the old page's snapshot fades
+/* Between the list and a node page (App.tsx, swapPage): the old page fades out
+   quickly while the new fades in and rises a few pixels. */
+@keyframes route-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+:root.route-swap::view-transition-old(root) {
+  animation: route-out 140ms ease-out both;
+}
+:root.route-swap::view-transition-new(root) {
+  animation: route-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* The palette change (lib/palette.ts): the old page's snapshot fades
    out over the new one in the blend's own time and ease. */
 :root.palette-swap::view-transition-old(root),
 :root.palette-swap::view-transition-new(root) {

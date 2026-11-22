@@ -104,7 +104,8 @@ function useNodeRoute() {
   useEffect(() => {
     const sync = () => {
       current.current = read()
-      setId(current.current)
+      const next = current.current
+      swapPage(() => setId(next))
     }
     addEventListener("popstate", sync)
     return () => removeEventListener("popstate", sync)
@@ -139,11 +140,29 @@ function useNodeRoute() {
     const back = next === null && from !== null
     arrive.current = { top: back ? listScroll.current : 0, focus: next === null ? (back ? opened.current : null) : "title" }
     current.current = next
-    // In a transition: the page in view stays until the next one can render,
-    // with no fallback flashing in between.
-    startTransition(() => setId(next))
+    swapPage(() => setId(next))
   }, [])
   return [id, go] as const
+}
+
+/**
+ * Moving between the list and a node page. Where the browser has view
+ * transitions, the page in view is held as a picture while the next one
+ * renders, then fades out as the next fades and rises in (`.route-swap`,
+ * index.css): opacity and a transform only, on the compositor. Elsewhere, and
+ * with reduced motion, in a React transition, so the page in view stays until
+ * the next can render, with no fallback flashing in between.
+ */
+const MOTION = matchMedia("(prefers-reduced-motion: reduce)")
+function swapPage(change: () => void) {
+  if (typeof document.startViewTransition !== "function" || MOTION.matches || document.hidden) {
+    startTransition(change)
+    return
+  }
+  const root = document.documentElement
+  root.classList.add("route-swap")
+  const swap = document.startViewTransition(() => flushSync(change))
+  void swap.finished.finally(() => root.classList.remove("route-swap"))
 }
 
 const DARK_MEDIA = matchMedia("(prefers-color-scheme: dark)")

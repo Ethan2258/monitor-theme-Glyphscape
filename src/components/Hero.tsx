@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react"
 import { InIcon, OutIcon } from "@/components/icons"
 
 import { daysLeft, deployed } from "@/components/NodeCard"
@@ -8,6 +9,41 @@ import { bytes, money, pct, rate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 /** A figure and its unit, set apart: "24.2 KB/s" as 24.2 and KB/s. */
+/**
+ * A figure that rolls to each new value over about half a second, easing out,
+ * rather than jumping every two seconds. Only this span redraws while it rolls;
+ * with reduced motion it jumps.
+ */
+const STILL = matchMedia("(prefers-reduced-motion: reduce)")
+function useRoll(target: number, ms = 550): number {
+  const [shown, setShown] = useState(target)
+  const now = useRef(target)
+  const still = STILL.matches || document.hidden
+  useEffect(() => {
+    if (still) {
+      now.current = target
+      return
+    }
+    const from = now.current
+    const start = performance.now()
+    let frame = 0
+    const step = (t: number) => {
+      const k = Math.min(1, (t - start) / ms)
+      const value = from + (target - from) * (1 - (1 - k) ** 3)
+      now.current = value
+      setShown(value)
+      if (k < 1) frame = requestAnimationFrame(step)
+    }
+    frame = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(frame)
+  }, [target, ms, still])
+  return still ? target : shown
+}
+
+function RollingFigure({ value, format, className }: { value: number; format: (n: number) => string; className?: string }) {
+  return <Figure text={format(useRoll(value))} className={className} />
+}
+
 function Figure({ text, className }: { text: string; className?: string }) {
   const at = text.lastIndexOf(" ")
   return (
@@ -234,7 +270,7 @@ function Overview({ nodes, cost, rates, primary, onOpen }: {
               <Icon className={cn("size-3.5", tone)} />
               实时{label}
             </div>
-            <Figure text={rate(value)} className="mt-1.5 block text-3xl/none font-medium tracking-tight sm:text-5xl/none" />
+            <RollingFigure value={value} format={rate} className="mt-1.5 block text-3xl/none font-medium tracking-tight sm:text-5xl/none" />
           </div>
         ))}
       </div>
