@@ -663,7 +663,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
   const pingEntry = useNodePing(node.id, pingSettings.hours, pingSettings.show)
   const pingNow = pingSettings.show
     ? parts(...probeLines(pingEntry?.data, pingSettings.probes, pingSettings.hours).map(
-        (l) => `${l.name} ${l.latest === null ? "超时" : l.latest < 1 ? "<1 ms" : `${Math.round(l.latest)} ms`}`,
+        (l) => `${l.name} ${l.latest === undefined ? "—" : l.latest === null ? "超时" : l.latest < 1 ? "<1 ms" : `${Math.round(l.latest)} ms`}`,
       ))
     : null
   const expired = days !== null && days < 0

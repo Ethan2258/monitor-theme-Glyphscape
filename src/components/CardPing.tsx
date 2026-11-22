@@ -70,7 +70,8 @@ export function useNodePing(id: number, hours: number, active: boolean): Entry |
 export type ProbeLine = {
   id: number
   name: string
-  latest: number | null
+  /** Latest round trip in ms, null for a timeout, undefined when no samples exist in the window. */
+  latest: number | null | undefined
   loss: number
   /** One block per slot: its median, null for a timeout, undefined for no data. */
   slots: (number | null | undefined)[]
@@ -119,7 +120,7 @@ export function probeLines(data: PingData | null | undefined, wanted: string, ho
     return {
       id,
       name,
-      latest: last ? last.latency : null,
+      latest: last ? last.latency : undefined,
       loss: data.loss?.[id] ?? 0,
       slots,
       typical: median(answered),
@@ -148,7 +149,7 @@ function shade(v: number | null | undefined, typical: number | null): string {
   return "bg-foreground/22"
 }
 
-const ms = (v: number | null) => (v === null ? "超时" : v < 1 ? "<1 ms" : `${Math.round(v)} ms`)
+const ms = (v: number | null | undefined) => (v === undefined ? "—" : v === null ? "超时" : v < 1 ? "<1 ms" : `${Math.round(v)} ms`)
 
 /** A probe's row: name, strip, latest, loss. */
 function ProbeRow({ line, hours }: { line: ProbeLine; hours: number }) {
@@ -165,7 +166,7 @@ function ProbeRow({ line, hours }: { line: ProbeLine; hours: number }) {
           <span key={i} className={cn("h-full min-w-0 flex-1 rounded-[1px]", shade(v, line.typical))} />
         ))}
       </span>
-      <span className={cn("tnum text-right whitespace-nowrap", line.latest === null && "text-hot")}>
+      <span className={cn("tnum text-right whitespace-nowrap", line.latest === null && "text-hot", line.latest === undefined && "text-muted-foreground")}>
         {ms(line.latest)}
         {line.loss >= 1 && <span className="ml-1 text-[10px] text-muted-foreground">{Math.round(line.loss)}%</span>}
       </span>
@@ -230,12 +231,12 @@ export const PingCell = memo(function PingCell({ id }: { id: number }) {
         <>
           <div className="truncate">
             {lines.map((l, i) => (
-              <span key={l.id} className={cn(l.latest === null && "text-hot")}>
+              <span key={l.id} className={cn(l.latest === null && "text-hot", l.latest === undefined && "text-muted-foreground")}>
                 {i > 0 && <span className="text-muted-foreground"> · </span>}
-                {l.latest === null ? "超时" : l.latest < 1 ? "<1" : Math.round(l.latest)}
+                {l.latest === undefined ? "—" : l.latest === null ? "超时" : l.latest < 1 ? "<1" : Math.round(l.latest)}
               </span>
             ))}
-            <span className="text-muted-foreground"> ms</span>
+            {lines.some((l) => typeof l.latest === "number") && <span className="text-muted-foreground"> ms</span>}
           </div>
           <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{lines.map((l) => l.name).join(" · ")}</div>
         </>
@@ -257,7 +258,7 @@ export function PingSummary({ id }: { id: number }) {
       {lines.map((l, i) => (
         <span key={l.id}>
           {i > 0 && " · "}
-          <span className={cn("whitespace-nowrap", l.latest === null && "text-hot")}>{`${l.name} ${ms(l.latest)}`}</span>
+          <span className={cn("whitespace-nowrap", l.latest === null && "text-hot", l.latest === undefined && "text-muted-foreground")}>{`${l.name} ${ms(l.latest)}`}</span>
         </span>
       ))}
     </span>
