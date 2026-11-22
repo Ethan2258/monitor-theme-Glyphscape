@@ -200,13 +200,19 @@ function useStages<T>(value: T, count: number): (T | undefined)[] {
   const next = shown.findIndex((v) => v !== value)
   useEffect(() => {
     if (next < 0) return
-    return afterIdle(() =>
+    const advance = () =>
       setShown((all) => {
         const copy = [...all]
         copy[next] = value
         return copy
-      }),
-    )
+      })
+    // First chart lands on the very next frame so the top panel never waits on
+    // idle callbacks; subsequent panels yield to idle between draws.
+    if (next === 0) {
+      const id = requestAnimationFrame(advance)
+      return () => cancelAnimationFrame(id)
+    }
+    return afterIdle(advance)
   }, [next, value])
   return shown
 }
@@ -497,7 +503,7 @@ export const ResourceCharts = memo(function ResourceCharts({
     }),
     [rows, window, plot, widePlot, narrow, solo, axes, peak, has, availability, hours, memTotal, swapTotal, diskTotal, stage],
   )
-  const [memory, network, disk, counts] = useStages(draw, 4)
+  const [cpu, memory, network, disk, counts] = useStages(draw, 5)
 
   // A frame after the last stage's commit, by when recharts has laid it out.
   useEffect(() => {
@@ -509,7 +515,7 @@ export const ResourceCharts = memo(function ResourceCharts({
   return (
     <div className={RESOURCE_GRID}>
       {draw.availability && <UptimeStrip availability={draw.availability} hours={draw.hours} narrow={draw.narrow} />}
-      <CpuPanel d={draw} />
+      {cpu ? <CpuPanel d={cpu} /> : <PanelSkeleton />}
       {memory ? <MemoryPanel d={memory} /> : <PanelSkeleton />}
       {network ? <NetworkPanel d={network} /> : <PanelSkeleton />}
       {disk ? <DiskPanel d={disk} /> : <PanelSkeleton />}

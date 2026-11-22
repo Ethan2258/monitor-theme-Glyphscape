@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 
 import { history } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -28,7 +28,10 @@ const FRESH = 60_000
 type Entry = { data: PingData | null; at: number; failed: boolean }
 const cache = new Map<string, Entry>()
 const listeners = new Map<string, Set<() => void>>()
+const anyListeners = new Set<() => void>()
 const inflight = new Set<string>()
+let cacheVersion = 0
+const EMPTY_RANKS: ReadonlyMap<number, number | null> = new Map()
 
 function load(id: number, hours: number) {
   const key = `${id}:${hours}`
@@ -38,7 +41,9 @@ function load(id: number, hours: number) {
   const done = (entry: Entry) => {
     inflight.delete(key)
     cache.set(key, entry)
+    cacheVersion++
     listeners.get(key)?.forEach((fn) => fn())
+    anyListeners.forEach((fn) => fn())
   }
   history<PingData>(`/nodes/${id}/metrics?series=ping&hours=${hours}&points=${SLOTS * 2}`)
     .then((data) => done({ data, at: Date.now(), failed: false }))
@@ -46,7 +51,10 @@ function load(id: number, hours: number) {
     .catch(() => done({ data: have?.data ?? null, at: Date.now() - (FRESH * 3) / 4, failed: true }))
 }
 
-/** The latency history of node `id`, asked for while `active` and refreshed each minute. */
+/**
+ * The latency history of node `id`, asked for while `active` and refreshed each
+ * minute. Pauses while the tab is hidden and catches up immediately on return.
+ */
 export function useNodePing(id: number, hours: number, active: boolean): Entry | undefined {
   const key = `${id}:${hours}`
   const entry = useSyncExternalStore(
@@ -60,11 +68,74 @@ export function useNodePing(id: number, hours: number, active: boolean): Entry |
   )
   useEffect(() => {
     if (!active) return
-    load(id, hours)
-    const timer = setInterval(() => load(id, hours), FRESH / 2)
-    return () => clearInterval(timer)
+    const refresh = () => {
+      if (!document.hidden) load(id, hours)
+    }
+    refresh()
+    const timer = setInterval(refresh, FRESH / 2)
+    document.addEventListener("visibilitychange", refresh)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener("visibilitychange", refresh)
+    }
   }, [id, hours, active])
   return entry
+}
+
+/**
+ * Mean latest round trip (ms) per node for latency sorting, or Infinity when
+ * every chosen probe timed out. Idle (zero subscriptions / fetches) unless `active`.
+ */
+export function usePingRanks(ids: number[], active: boolean, settings: PingSettings): ReadonlyMap<number, number | null> {
+  const { show, probes, hours } = settings
+  const enabled = active && show
+  const version = useSyncExternalStore(
+    (notify) => {
+      if (!enabled) return () => {}
+      anyListeners.add(notify)
+      return () => anyListeners.delete(notify)
+    },
+    () => (enabled ? cacheVersion : 0),
+  )
+  const idsKey = enabled ? ids.join(",") : ""
+  useEffect(() => {
+    if (!enabled || !idsKey) return
+    const loadAll = () => {
+      if (document.hidden) return
+      for (const raw of idsKey.split(",")) load(Number(raw), hours)
+    }
+    loadAll()
+    const timer = setInterval(loadAll, FRESH / 2)
+    document.addEventListener("visibilitychange", loadAll)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener("visibilitychange", loadAll)
+    }
+  }, [enabled, idsKey, hours])
+
+  return useMemo(() => {
+    if (!enabled || !idsKey) return EMPTY_RANKS
+    // `version` forces recalculation whenever any cached probe entry settles.
+    void version
+    const map = new Map<number, number | null>()
+    for (const raw of idsKey.split(",")) {
+      const id = Number(raw)
+      const entry = cache.get(`${id}:${hours}`)
+      const lines = probeLines(entry?.data, probes, hours)
+      if (!lines.length) continue
+      const answered = lines.map((l) => l.latest).filter((v): v is number => typeof v === "number")
+      const timeouts = lines.filter((l) => l.latest === null).length
+      if (answered.length) {
+        // Penalise timed-out probes so a dropped slowest carrier never ranks a
+        // partially broken node ahead of a healthy one.
+        const mean = answered.reduce((sum, v) => sum + v, 0) / answered.length
+        map.set(id, timeouts * 10_000 + mean)
+      } else if (timeouts > 0) {
+        map.set(id, Infinity)
+      }
+    }
+    return map
+  }, [enabled, idsKey, version, probes, hours])
 }
 
 export type ProbeLine = {
@@ -176,7 +247,7 @@ function ProbeRow({ line, hours }: { line: ProbeLine; hours: number }) {
   const summary = `最近 ${hours} 小时 · 常态 ${line.typical === null ? "—" : ms(line.typical)}${line.loss > 0 ? ` · 丢包 ${line.loss.toFixed(1)} %` : ""}（绿 <${MID_MS} ms · 黄 ${MID_MS}–${SLOW_MS} ms · 红 ≥${SLOW_MS} ms / 超时）`
   return (
     <div className="grid grid-cols-[4.25rem_minmax(0,1fr)_4.75rem] items-center gap-2 text-xs">
-      <span className="truncate text-muted-foreground" title={`${line.name} · ${summary}`}>{line.name}</span>
+      <span className="truncate text-muted-foreground transition-colors group-hover/ping:text-foreground" title={`${line.name} · ${summary}`}>{line.name}</span>
       <span
         className="flex h-2.5 min-w-0 gap-px"
         role="img"
@@ -199,12 +270,14 @@ function ProbeRow({ line, hours }: { line: ProbeLine; hours: number }) {
   )
 }
 
+export type OpenNode = (id: number, tab?: "resources" | "latency") => void
+
 /**
  * The card's latency block: asks once the card nears the screen, draws
  * nothing for a node without probes, and keeps its height while it loads so
- * the card does not grow under the reader.
+ * the card does not grow under the reader. Clicking opens the latency tab.
  */
-export const CardPing = memo(function CardPing({ id }: { id: number }) {
+export const CardPing = memo(function CardPing({ id, onOpen }: { id: number; onOpen?: OpenNode }) {
   const { show, probes, hours } = useContext(PingConfig)
   const box = useRef<HTMLDivElement>(null)
   const [near, setNear] = useState(false)
@@ -219,17 +292,36 @@ export const CardPing = memo(function CardPing({ id }: { id: number }) {
   const lines = probeLines(entry?.data, probes, hours)
   // Answered with no probes at all: nothing to show, and no space kept.
   if (entry && !entry.failed && lines.length === 0) return <div ref={box} />
+  const clickable = !!onOpen && lines.length > 0
   return (
-    <div ref={box} className="mt-3 space-y-1.5 border-t pt-3">
-      {lines.length
-        ? lines.map((l) => <ProbeRow key={l.id} line={l} hours={hours} />)
-        : [0, 1, 2].map((i) => (
-            <div key={i} className="grid grid-cols-[4.25rem_minmax(0,1fr)_4.75rem] items-center gap-2" aria-hidden>
-              <span className="h-2.5 rounded bg-muted" />
-              <span className="h-2.5 rounded bg-muted/60" />
-              <span className="h-2.5 rounded bg-muted" />
-            </div>
-          ))}
+    <div ref={box} className="mt-3 border-t pt-2">
+      <div
+        role={clickable ? "button" : undefined}
+        tabIndex={clickable ? 0 : undefined}
+        aria-label={clickable ? "查看网络延迟图表" : undefined}
+        onClick={clickable ? (e) => { e.stopPropagation(); onOpen(id, "latency") } : undefined}
+        onKeyDown={clickable ? (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            e.stopPropagation()
+            onOpen(id, "latency")
+          }
+        } : undefined}
+        className={cn(
+          "space-y-1.5 rounded-md pt-1",
+          clickable && "group/ping -mx-1.5 -mb-1 cursor-pointer px-1.5 pb-1 transition-colors outline-none hover:bg-secondary/50 focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        )}
+      >
+        {lines.length
+          ? lines.map((l) => <ProbeRow key={l.id} line={l} hours={hours} />)
+          : [0, 1, 2].map((i) => (
+              <div key={i} className="grid grid-cols-[4.25rem_minmax(0,1fr)_4.75rem] items-center gap-2" aria-hidden>
+                <span className="h-2.5 rounded bg-muted" />
+                <span className="h-2.5 rounded bg-muted/60" />
+                <span className="h-2.5 rounded bg-muted" />
+              </div>
+            ))}
+      </div>
     </div>
   )
 })
@@ -238,7 +330,7 @@ export const CardPing = memo(function CardPing({ id }: { id: number }) {
  * A table row's latency cell: the chosen probes' latest round trips on one
  * line, their names beneath. Asks once the row nears the screen.
  */
-export const PingCell = memo(function PingCell({ id }: { id: number }) {
+export const PingCell = memo(function PingCell({ id, onOpen }: { id: number; onOpen?: OpenNode }) {
   const { show, probes, hours } = useContext(PingConfig)
   const box = useRef<HTMLDivElement>(null)
   const [near, setNear] = useState(false)
@@ -250,8 +342,26 @@ export const PingCell = memo(function PingCell({ id }: { id: number }) {
   }, [show])
   const entry = useNodePing(id, hours, show && near)
   const lines = probeLines(entry?.data, probes, hours)
+  const clickable = !!onOpen && lines.length > 0
   return (
-    <div ref={box} className="tnum min-w-0 text-xs">
+    <div
+      ref={box}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      title={clickable ? "点击查看网络延迟图表" : undefined}
+      onClick={clickable ? (e) => { e.stopPropagation(); onOpen(id, "latency") } : undefined}
+      onKeyDown={clickable ? (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          e.stopPropagation()
+          onOpen(id, "latency")
+        }
+      } : undefined}
+      className={cn(
+        "tnum min-w-0 text-xs",
+        clickable && "group/ping -mx-1.5 cursor-pointer rounded-md px-1.5 py-1 transition-colors outline-none hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50",
+      )}
+    >
       {!show ? null : lines.length ? (
         <>
           <div className="truncate">
@@ -263,7 +373,7 @@ export const PingCell = memo(function PingCell({ id }: { id: number }) {
             ))}
             {lines.some((l) => typeof l.latest === "number") && <span className="text-muted-foreground"> ms</span>}
           </div>
-          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{lines.map((l) => l.name).join(" · ")}</div>
+          <div className="mt-0.5 truncate text-[11px] text-muted-foreground transition-colors group-hover/ping:text-foreground">{lines.map((l) => l.name).join(" · ")}</div>
         </>
       ) : (
         <span className="text-muted-foreground">{entry ? "—" : "…"}</span>
@@ -272,20 +382,36 @@ export const PingCell = memo(function PingCell({ id }: { id: number }) {
   )
 })
 
+/** Colored inline summary of probe lines, optionally clickable to jump to the latency tab. */
+export function PingSummaryLines({ lines, onClick }: { lines: ProbeLine[]; onClick?: () => void }) {
+  if (!lines.length) return null
+  const content = lines.map((l, i) => (
+    <span key={l.id}>
+      {i > 0 && <span className="text-muted-foreground"> · </span>}
+      <span className="whitespace-nowrap">
+        <span className="text-muted-foreground">{l.name} </span>
+        <span className={latencyTone(l.latest)}>{ms(l.latest)}</span>
+      </span>
+    </span>
+  ))
+  if (!onClick) return <span>{content}</span>
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="查看网络延迟图表"
+      className="cursor-pointer rounded-sm text-right outline-none hover:underline hover:decoration-border hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      {content}
+    </button>
+  )
+}
+
 /** A node page's one-line summary: each chosen probe's latest round trip. */
-export function PingSummary({ id }: { id: number }) {
+export function PingSummary({ id, onClick }: { id: number; onClick?: () => void }) {
   const { show, probes, hours } = useContext(PingConfig)
   const entry = useNodePing(id, hours, show)
   const lines = probeLines(entry?.data, probes, hours)
   if (!show || !lines.length) return null
-  return (
-    <span>
-      {lines.map((l, i) => (
-        <span key={l.id}>
-          {i > 0 && " · "}
-          <span className={cn("whitespace-nowrap", latencyTone(l.latest))}>{`${l.name} ${ms(l.latest)}`}</span>
-        </span>
-      ))}
-    </span>
-  )
+  return <PingSummaryLines lines={lines} onClick={onClick} />
 }

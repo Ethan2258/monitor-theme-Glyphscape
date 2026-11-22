@@ -1,6 +1,6 @@
 import { memo } from "react"
 
-import { PingCell } from "@/components/CardPing"
+import { PingCell, type OpenNode } from "@/components/CardPing"
 import { Country, daysLeft, deployed, monthUsage } from "@/components/NodeCard"
 import { Card } from "@/components/ui/card"
 import type { Node } from "@/lib/api"
@@ -38,7 +38,7 @@ export function NodeTable({ nodes, price, rates, primary, onOpen }: {
   price: boolean
   rates: Rates
   primary: "CNY" | "USD"
-  onOpen: (id: number) => void
+  onOpen: OpenNode
 }) {
   return (
     <Card className="gap-0 overflow-x-auto py-0">
@@ -71,7 +71,7 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
   price: boolean
   rates: Rates
   primary: "CNY" | "USD"
-  onOpen: (id: number) => void
+  onOpen: OpenNode
 }) {
   const pick = (both: { cny: number; usd: number }) => (primary === "CNY" ? money(both.cny, "CNY") : money(both.usd, "USD"))
   const m = n.metrics
@@ -125,7 +125,7 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
         <div className="truncate"><span className="text-rx">↓</span> {m ? rate(m.net_rx) : "—"}</div>
         <div className="mt-0.5 truncate"><span className="text-tx">↑</span> {m ? rate(m.net_tx) : "—"}</div>
       </div>
-      <PingCell id={n.id} />
+      <PingCell id={n.id} onOpen={onOpen} />
       <div className="min-w-0">
         {n.traffic_limit > 0 ? (
           <Bar pct={percent(used, n.traffic_limit)} foot={`${bytes(used)} / ${bytes(n.traffic_limit)}`} />

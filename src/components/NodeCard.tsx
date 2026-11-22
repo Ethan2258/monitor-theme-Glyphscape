@@ -8,7 +8,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Flag, hasFlag } from "@/components/Flag"
-import { CardPing } from "@/components/CardPing"
+import { CardPing, type OpenNode } from "@/components/CardPing"
 import { Meter } from "@/components/Meter"
 import { TRAFFIC_WARN } from "@/lib/filter"
 import type { Node } from "@/lib/api"
@@ -281,7 +281,7 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
   remarks: boolean
   rates: Rates
   primary: "CNY" | "USD"
-  onOpen: (id: number) => void
+  onOpen: OpenNode
 }) {
   const m = node.metrics
   const days = daysLeft(node)
@@ -397,7 +397,7 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
               累计 {bytes(node.total_tx)}
             </span>
           </div>
-          <CardPing id={node.id} />
+          <CardPing id={node.id} onOpen={onOpen} />
           </div>
           {price && (
             <Price

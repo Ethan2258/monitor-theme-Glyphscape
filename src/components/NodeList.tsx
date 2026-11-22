@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
 
+import type { OpenNode } from "@/components/CardPing"
 import { NodeCard } from "@/components/NodeCard"
 import { NodeTable } from "@/components/NodeTable"
 import { Toolbar, type View } from "@/components/Toolbar"
@@ -32,7 +33,7 @@ function useWide() {
  * tabs once the operator has grouped anything, search and order at its end --
  * and the cards under it.
  */
-export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filters, onFilters, onOpen, onPrefetch, toolbar, price, rates, primary, view, onView }: {
+export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filters, onFilters, onOpen, onPrefetch, toolbar, price, ping, rates, primary, view, onView }: {
   /** How many nodes are in each state, of those the group and country leave. */
   counts: Record<Status, number>
   /** Every node, in the operator's order. */
@@ -45,10 +46,11 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
   shown: Node[]
   filters: Filters
   onFilters: (filters: Filters) => void
-  onOpen: (id: number) => void
+  onOpen: OpenNode
   onPrefetch?: () => void
   toolbar: boolean
   price: boolean
+  ping: boolean
   rates: Rates
   primary: "CNY" | "USD"
   view: View
@@ -132,6 +134,7 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
           <Toolbar
             query={filters.query}
             sort={filters.sort}
+            ping={ping}
             onQuery={(query) => onFilters({ ...filters, query })}
             onSort={(sort) => onFilters({ ...filters, sort })}
             view={view}

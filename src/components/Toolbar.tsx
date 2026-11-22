@@ -16,10 +16,11 @@ const FIELD =
  */
 export type View = "cards" | "table"
 
-export function Toolbar({ query, sort, view, onQuery, onSort, onView }: {
+export function Toolbar({ query, sort, view, ping = true, onQuery, onSort, onView }: {
   query: string
   sort: SortKey
   view: View
+  ping?: boolean
   onQuery: (query: string) => void
   onSort: (sort: SortKey) => void
   onView: (view: View) => void
@@ -48,7 +49,7 @@ export function Toolbar({ query, sort, view, onQuery, onSort, onView }: {
           onChange={(e) => onSort(e.target.value as SortKey)}
           className={`${FIELD} cursor-pointer appearance-none pr-7 pl-2.5`}
         >
-          {SORTS.map(([key, label]) => (
+          {SORTS.filter(([key]) => ping || key !== "ping").map(([key, label]) => (
             <option key={key} value={key}>{label}</option>
           ))}
         </select>

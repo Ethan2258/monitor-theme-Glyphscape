@@ -69,7 +69,7 @@ export function Regions({ nodes, selected, onPick }: {
     "inline-flex h-9 items-center gap-1.5 rounded-full border sm:h-7 bg-card px-2.5 text-xs shadow-xs transition-colors outline-none hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 
   return (
-    <div data-pond-avoid="" data-sky-ignore="" className="flex min-w-0 flex-col items-center gap-3 sm:gap-4 lg:w-[26rem]">
+    <div data-pond-avoid="" data-sky-ignore="" className="flex min-w-0 flex-col items-center gap-3 sm:gap-4 lg:w-[28.5rem]">
       <Globe markers={markers} selected={selected} onPick={onPick} />
       {regions.length > 0 && (
         // Below sm, one row that scrolls sideways (bleeding to the screen's
@@ -78,7 +78,7 @@ export function Regions({ nodes, selected, onPick }: {
         <div
           role="group"
           aria-label="地区"
-          className="flex max-w-[26rem] flex-wrap justify-center gap-1.5 md:max-lg:max-w-[34rem] max-sm:-mx-4 max-sm:w-[calc(100%+2rem)] max-sm:max-w-none max-sm:flex-nowrap max-sm:justify-start max-sm:overflow-x-auto max-sm:px-4 max-sm:py-0.5 max-sm:[scrollbar-width:none]"
+          className="flex max-w-[28.5rem] flex-wrap justify-center gap-1.5 md:max-lg:max-w-[34rem] max-sm:-mx-4 max-sm:w-[calc(100%+2rem)] max-sm:max-w-none max-sm:flex-nowrap max-sm:justify-start max-sm:overflow-x-auto max-sm:px-4 max-sm:py-0.5 max-sm:[scrollbar-width:none]"
         >
           {(phone ? regions : listed).map((r) => {
             const on = r.code === selected

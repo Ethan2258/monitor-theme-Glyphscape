@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import assert from "node:assert/strict"
-import { api, groupsOf, safeNodes, sample, speedHistory, throughput, type Node } from "./api.ts"
+import { api, groupsOf, history, safeNodes, sample, speedHistory, throughput, type Node } from "./api.ts"
 
 const node = { id: 1, metrics: { uptime: 100, cpu: 1, load: [0.1, 0.2, 0.3],
   mem_total: 1024, mem_used: 512, swap_total: 0, swap_used: 0, disk_total: 2048, disk_used: 1024,
@@ -51,4 +51,29 @@ console.log("throughput is kept per node")
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => JSON.parse("<html>") }) as unknown as Response
   await assert.rejects(api("/nodes"), { status: 200, message: "收到的不是状态数据，稍后再试" })
   console.log("timeouts are retried and read as network failures")
+}
+
+// Foreground priority history queries cut ahead of queued background ones.
+{
+  const started: string[] = []
+  const gates: (() => void)[] = []
+  globalThis.fetch = (async (url: string) => {
+    started.push(url)
+    await new Promise<void>((r) => gates.push(r))
+    return { ok: true, status: 200, json: async () => ({}) }
+  }) as unknown as typeof fetch
+  const p1 = history("/bg1")
+  const p2 = history("/bg2")
+  const p3 = history("/bg3")
+  const p4 = history("/fg", true)
+  while (gates.length < 2) await new Promise((r) => setTimeout(r, 1))
+  gates.shift()!()
+  gates.shift()!()
+  await Promise.all([p1, p2])
+  while (gates.length < 2) await new Promise((r) => setTimeout(r, 1))
+  gates.shift()!()
+  gates.shift()!()
+  await Promise.all([p3, p4])
+  assert.deepEqual(started, ["/api/bg1", "/api/bg2", "/api/fg", "/api/bg3"])
+  console.log("priority history queries jump the queue")
 }

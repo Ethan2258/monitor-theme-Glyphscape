@@ -1,14 +1,14 @@
 {
   "name": "monitor-theme-inkpond",
   "private": true,
-  "version": "1.2.22",
+  "version": "1.2.23",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "demo": "vite --mode demo --port 5173 --strictPort",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node src/lib/format.test.ts && node src/lib/api.test.ts && node src/lib/cost.test.ts && node src/lib/globe.test.ts",
+    "test": "node src/lib/format.test.ts && node src/lib/api.test.ts && node src/lib/cost.test.ts && node src/lib/globe.test.ts && node src/lib/filter.test.ts",
     "preview": "vite preview",
     "land": "node scripts/landmask.mjs",
     "pack": "npm run build && node scripts/pack.mjs"

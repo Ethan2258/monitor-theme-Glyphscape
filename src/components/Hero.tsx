@@ -28,6 +28,11 @@ function useRoll(target: number, ms = 550): number {
     const start = performance.now()
     let frame = 0
     const step = (t: number) => {
+      if (document.hidden) {
+        now.current = target
+        setShown(target)
+        return
+      }
       const k = Math.min(1, (t - start) / ms)
       const value = from + (target - from) * (1 - (1 - k) ** 3)
       now.current = value
@@ -364,7 +369,7 @@ export function Hero({ nodes, scope, region, onRegion, onOpen, summary, globe, c
         // standing on the first gravestone. Less on a phone, whose graveyard
         // is a third the height and where every pixel puts the first card
         // further down.
-        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-16 gap-y-6 px-4 pt-4 pb-8 sm:gap-y-10 sm:px-6 sm:pb-12 lg:pt-6 lg:pb-14 [.tall-scene_&]:sm:pb-20 [.tall-scene_&]:lg:pb-36 [.tall-scene_&]:xl:pb-28",
+        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-10 gap-y-6 px-4 pt-4 pb-8 sm:gap-y-10 sm:px-6 sm:pb-12 lg:pt-6 lg:pb-14 xl:gap-x-16 [.tall-scene_&]:sm:pb-20 [.tall-scene_&]:lg:pb-36 [.tall-scene_&]:xl:pb-28",
         summary && showGlobe && "lg:grid-cols-[minmax(0,1fr)_auto]",
       )}
     >

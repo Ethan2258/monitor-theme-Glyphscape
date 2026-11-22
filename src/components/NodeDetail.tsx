@@ -8,7 +8,7 @@ import {
   CHART_MARGIN, isDense, PALETTE, pct, Placeholder, RING, Swatch, axisWidth, binaryAxis, useNarrow,
 } from "@/components/detail/chart"
 import { history, type Node } from "@/lib/api"
-import { PingConfig, probeLines, useNodePing } from "@/components/CardPing"
+import { PingConfig, PingSummaryLines, probeLines, useNodePing } from "@/components/CardPing"
 import { convert, remaining, type Rates } from "@/lib/cost"
 import {
   axisTop, bytes, cycle, despike, quarters, rollingMean, cpuName, FOREVER, money, osName, pair,
@@ -167,15 +167,29 @@ const RESOURCE_KEYS = ["cpu", "mem_used", "swap_used", "rx", "tx", "disk_used", 
  *
  * `price` is the operator's `show_price` setting.
  */
-export function NodeDetail({ node, historyDays, price, rates, primary }: {
+export function NodeDetail({ node, historyDays, price, rates, primary, tab: controlledTab, onTab }: {
   node: Node
   historyDays: number
   price: boolean
   rates: Rates
   primary: "CNY" | "USD"
+  tab?: TabKey
+  onTab?: (tab: TabKey) => void
 }) {
   const ranges = useMemo(() => windows(historyDays), [historyDays])
-  const [tab, setTab] = useState<TabKey>("resources")
+  const [localTab, setLocalTab] = useState<TabKey>(controlledTab ?? "resources")
+  const tab = controlledTab ?? localTab
+  const setTab = useCallback((next: TabKey) => {
+    setLocalTab(next)
+    onTab?.(next)
+  }, [onTab])
+  // Defer mounting heavy Recharts trees until one frame after initial route
+  // commit so the facts card & cross-fade land without a long frame.
+  const [chartsMounted, setChartsMounted] = useState(false)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setChartsMounted(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
   // Each tab keeps its own range: a 7-day trend and a 1-hour trace answer
   // different questions.
   const [picked, setPicked] = useState({ resources: 6, latency: 6 })
@@ -286,7 +300,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
     const per = tab === "resources" && hours >= 24 ? 2 : 1
     const points = Math.min(1440, Math.max(60, Math.round(panel / per)))
     const series = tab === "latency" ? "ping" : "metrics"
-    history<History>(`/nodes/${node.id}/metrics?hours=${hours}&points=${points}&series=${series}`)
+    history<History>(`/nodes/${node.id}/metrics?hours=${hours}&points=${points}&series=${series}`, true)
       .then((next) => settle(next))
       .catch((e: Error) => {
         if (!active) return
@@ -661,11 +675,15 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
   // same history the node's card draws its strips from (CardPing.tsx).
   const pingSettings = useContext(PingConfig)
   const pingEntry = useNodePing(node.id, pingSettings.hours, pingSettings.show)
-  const pingNow = pingSettings.show
-    ? parts(...probeLines(pingEntry?.data, pingSettings.probes, pingSettings.hours).map(
-        (l) => `${l.name} ${l.latest === undefined ? "—" : l.latest === null ? "超时" : l.latest < 1 ? "<1 ms" : `${Math.round(l.latest)} ms`}`,
-      ))
-    : null
+  const pingLines = useMemo(
+    () => (pingSettings.show ? probeLines(pingEntry?.data, pingSettings.probes, pingSettings.hours) : []),
+    [pingSettings.show, pingEntry?.data, pingSettings.probes, pingSettings.hours],
+  )
+  const openLatencyTab = useCallback(() => {
+    setTab("latency")
+    area.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+  }, [setTab])
+  const pingNow = pingLines.length ? <PingSummaryLines lines={pingLines} onClick={openLatencyTab} /> : null
   const expired = days !== null && days < 0
   // The renewal line in parts, each kept whole on a line of its own: wrapped
   // anywhere, "到期" broke across two lines. A part after full-width
@@ -871,7 +889,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
         style={minHeight ? { minHeight } : undefined}
       >
       <div ref={content}>
-        {!data ? (
+        {!data || !chartsMounted ? (
           tab === "latency" ? (
             // The chart's height and a row of chips, so the chart lands in the
             // space it held.

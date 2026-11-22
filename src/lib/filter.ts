@@ -1,7 +1,7 @@
-import type { Node } from "@/lib/api"
-import { countryName } from "@/lib/countries"
-import { monthly } from "@/lib/cost"
-import { daysUntil, percent } from "@/lib/format"
+import type { Node } from "./api.ts"
+import { countryName } from "./countries.ts"
+import { monthly } from "./cost.ts"
+import { daysUntil, percent } from "./format.ts"
 
 /** The orders the list can be put in. `default` is the operator's own. */
 export const SORTS = [
@@ -12,6 +12,7 @@ export const SORTS = [
   ["disk", "硬盘"],
   ["traffic", "流量"],
   ["speed", "网速"],
+  ["ping", "延迟"],
   ["expiry", "到期"],
   ["price", "价格"],
 ] as const
@@ -23,7 +24,7 @@ export const isSortKey = (v: unknown): v is SortKey => SORTS.some(([key]) => key
 // What a node is ranked by under each order, or null where it has nothing to be
 // ranked by -- no live metrics, no expiry date, no price -- which puts it after
 // every node that has. The largest first, except the date nearest first.
-const RANK: Record<Exclude<SortKey, "default" | "name">, (n: Node) => number | null> = {
+const RANK: Record<Exclude<SortKey, "default" | "name" | "ping">, (n: Node) => number | null> = {
   cpu: (n) => n.metrics?.cpu ?? null,
   mem: (n) => (n.metrics ? percent(n.metrics.mem_used, n.metrics.mem_total) : null),
   disk: (n) => (n.metrics ? percent(n.metrics.disk_used, n.metrics.disk_total) : null),
@@ -46,10 +47,17 @@ const collator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base"
 /** The operator's order: `sort`, then the order the nodes were added in. */
 const byDefault = (a: Node, b: Node) => a.sort - b.sort || a.id - b.id
 
-export function sortNodes(nodes: Node[], key: SortKey): Node[] {
+export function sortNodes(nodes: Node[], key: SortKey, ping?: ReadonlyMap<number, number | null>): Node[] {
   if (key === "default") return [...nodes].sort(byDefault)
   if (key === "name") return [...nodes].sort((a, b) => collator.compare(a.name, b.name) || byDefault(a, b))
-  const rank = RANK[key]
+  const rank =
+    key === "ping"
+      ? (n: Node) => {
+          const ms = ping?.get(n.id)
+          if (ms === undefined || ms === null) return null
+          return Number.isFinite(ms) ? -ms : -1e9
+        }
+      : RANK[key]
   // Ranked once a node rather than once a comparison.
   return nodes
     .map((node) => ({ node, value: rank(node) }))
@@ -128,7 +136,7 @@ export function hasStatus(n: Node, status: Status): boolean {
  * has since emptied -- renamed, the node moved -- falls back to all of them
  * rather than to an empty page; the caller writes the corrected filters back.
  */
-export function narrow(nodes: Node[], filters: Filters) {
+export function narrow(nodes: Node[], filters: Filters, ping?: ReadonlyMap<number, number | null>) {
   const groups = [...new Set(nodes.map((n) => n.group ?? "").filter(Boolean))]
   const ungrouped = nodes.filter((n) => !n.group).length
   const group =
@@ -141,7 +149,7 @@ export function narrow(nodes: Node[], filters: Filters) {
   const inRegion = region === null ? inGroup : inGroup.filter((n) => inCountry(n, region))
   const status = filters.status
   const inStatus = status === null ? inRegion : inRegion.filter((n) => hasStatus(n, status))
-  const shown = sortNodes(searchNodes(inStatus, filters.query), filters.sort)
+  const shown = sortNodes(searchNodes(inStatus, filters.query), filters.sort, ping)
   // How many of the nodes the group and country leave are in each state, for the chips.
   const counts = Object.fromEntries(STATUSES.map(([key]) => [key, inRegion.filter((n) => hasStatus(n, key)).length])) as Record<Status, number>
   return { groups, ungrouped, group, region, inGroup, shown, counts }

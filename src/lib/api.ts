@@ -210,20 +210,23 @@ function historyPump() {
     historyQueue.shift()!()
   }
 }
-export function history<T>(path: string, attempt = 0): Promise<T> {
+export function history<T>(path: string, priority = false, attempt = 0): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    historyQueue.push(() => {
+    const run = () => {
       api<T>(path)
         .then(resolve, (e: unknown) => {
           if (e instanceof ApiError && e.status === 503 && attempt < 3) {
-            setTimeout(() => history<T>(path, attempt + 1).then(resolve, reject), 1500 * (attempt + 1))
+            setTimeout(() => history<T>(path, priority, attempt + 1).then(resolve, reject), 1500 * (attempt + 1))
           } else reject(e)
         })
         .finally(() => {
           historyRunning--
           historyPump()
         })
-    })
+    }
+    // Foreground detail-page queries cut ahead of background backfill / card ping queues.
+    if (priority) historyQueue.unshift(run)
+    else historyQueue.push(run)
     historyPump()
   })
 }

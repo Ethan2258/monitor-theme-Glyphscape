@@ -18,7 +18,7 @@ import { applyPalette, applyScene, transitionPalette } from "@/lib/palette"
 import { preloadPond } from "@/lib/pond"
 import { preloadRealm } from "@/lib/realm"
 import { useRates } from "@/lib/rates"
-import { PingConfig } from "@/components/CardPing"
+import { PingConfig, usePingRanks } from "@/components/CardPing"
 import { cn } from "@/lib/utils"
 
 const WRAITH_ICON =
@@ -87,13 +87,17 @@ function store(key: string, value: string) {
 // `/node/{id}` is a real page: it survives a reload, can be linked to, and back
 // leaves the detail view rather than the site. The hub serves index.html for any
 // unknown path, so no server-side route is required.
+type DetailTab = "resources" | "latency"
+
 function useNodeRoute() {
-  const read = () => {
+  const read = (): { id: number | null; tab: DetailTab } => {
     const match = location.pathname.match(/^\/node\/(\d+)/)
-    return match ? Number(match[1]) : null
+    const id = match ? Number(match[1]) : null
+    const tab: DetailTab = id !== null && new URLSearchParams(location.search).get("tab") === "latency" ? "latency" : "resources"
+    return { id, tab }
   }
-  const [id, setId] = useState(read)
-  const current = useRef(id)
+  const [route, setRoute] = useState(read)
+  const current = useRef(route)
   // Where the list was scrolled to when a node was opened, and which node it
   // was, so that coming back returns to the same card, focus and all.
   const listScroll = useRef(0)
@@ -104,9 +108,9 @@ function useNodeRoute() {
   const arrive = useRef<{ top: number; focus: number | null | "title" } | null>(null)
   useEffect(() => {
     const sync = () => {
-      current.current = read()
-      const next = current.current
-      swapPage(() => setId(next))
+      const next = read()
+      current.current = next
+      swapPage(() => setRoute(next))
     }
     addEventListener("popstate", sync)
     return () => removeEventListener("popstate", sync)
@@ -135,22 +139,32 @@ function useNodeRoute() {
       if (next.focus === "title" && !target.hasAttribute("tabindex")) target.tabIndex = -1
       target.focus({ preventScroll: true })
     }
-  }, [id])
+  }, [route.id])
   // Stable, so the list and its cards can skip re-rendering.
-  const go = useCallback((next: number | null) => {
-    const from = current.current
-    const path = next === null ? "/" : `/node/${next}`
+  const go = useCallback((next: number | null, tab: DetailTab = "resources") => {
+    const from = current.current.id
+    const path = next === null ? "/" : tab === "latency" ? `/node/${next}?tab=latency` : `/node/${next}`
     if (next !== null && from === null) {
       listScroll.current = scrollY
       opened.current = next
     }
-    if (location.pathname !== path) history.pushState({}, "", path)
+    if (location.pathname + location.search !== path) history.pushState({}, "", path)
     const back = next === null && from !== null
     arrive.current = { top: back ? listScroll.current : 0, focus: next === null ? (back ? opened.current : null) : "title" }
-    current.current = next
-    swapPage(() => setId(next))
+    const target = { id: next, tab: next === null ? ("resources" as const) : tab }
+    current.current = target
+    swapPage(() => setRoute(target))
   }, [])
-  return [id, go] as const
+  const setTab = useCallback((tab: DetailTab) => {
+    const id = current.current.id
+    if (id === null || current.current.tab === tab) return
+    const path = tab === "latency" ? `/node/${id}?tab=latency` : `/node/${id}`
+    if (location.pathname + location.search !== path) history.replaceState({}, "", path)
+    const next = { id, tab }
+    current.current = next
+    setRoute(next)
+  }, [])
+  return [route.id, route.tab, go, setTab] as const
 }
 
 /**
@@ -182,7 +196,7 @@ function swapPage(change: () => void) {
         setTimeout(resolve, 1000)
       }),
   )
-  void swap.finished.finally(() => root.classList.remove("route-swap"))
+  void swap.finished.finally(() => root.classList.remove("route-swap")).catch(() => {})
 }
 let landed: (() => void) | null = null
 
@@ -321,7 +335,7 @@ export default function App() {
   useEffect(() => syncFavicon(iconHref), [iconHref])
   const rates = useRates(settings.live_rates)
   const { nodes, error, closed } = useNodes()
-  const [open, go] = useNodeRoute()
+  const [open, detailTab, go, setDetailTab] = useNodeRoute()
   // What the list is narrowed to, held here so it survives a visit to a node's
   // page. The order is the visitor's preference and outlives the tab.
   const [filters, setFilters] = useState<Filters>(() => {
@@ -376,13 +390,22 @@ export default function App() {
 
   const sorted = useMemo(() => [...(nodes ?? [])].sort((a, b) => a.sort - b.sort || a.id - b.id), [nodes])
   const selected = sorted.find((n) => n.id === open)
+  const effectiveSort = filters.sort === "ping" && !settings.show_ping ? "default" : filters.sort
+  const pingIds = useMemo(() => sorted.filter((n) => n.cpu_cores > 0 || n.mem_total > 0).map((n) => n.id), [sorted])
+  const pingRanks = usePingRanks(pingIds, effectiveSort === "ping" && open === null, ping)
   // The search box answers each key at once; the list it narrows follows a beat
   // behind when there is a lot to redraw.
   const query = useDeferredValue(filters.query)
-  const view = useMemo(() => narrow(sorted, { ...filters, query }), [sorted, filters, query])
+  const view = useMemo(
+    () => narrow(sorted, { ...filters, sort: effectiveSort, query }, pingRanks),
+    [sorted, filters, effectiveSort, query, pingRanks],
+  )
   // The overview sums what the group, the country and the status leave, not
   // what the search box has found: typing a name does not empty the figures.
-  const overview = useMemo(() => (query ? narrow(sorted, { ...filters, query: "" }).shown : view.shown), [sorted, filters, query, view.shown])
+  const overview = useMemo(
+    () => (query ? narrow(sorted, { ...filters, sort: effectiveSort, query: "" }, pingRanks).shown : view.shown),
+    [sorted, filters, effectiveSort, query, pingRanks, view.shown],
+  )
   const pickRegion = useCallback((region: string | null) => setFilters((f) => ({ ...f, region })), [])
   // A tab or a country that has emptied is let go of, so a later one of the
   // same name does not take the page over.
@@ -513,6 +536,8 @@ export default function App() {
                   price={settings.show_price}
                   rates={rates}
                   primary={primary}
+                  tab={detailTab}
+                  onTab={setDetailTab}
                 />
               </Suspense>
             </Card>
@@ -541,6 +566,7 @@ export default function App() {
             onPrefetch={prefetchDetail}
             toolbar={settings.show_toolbar}
             price={settings.show_price}
+            ping={settings.show_ping}
             rates={rates}
             primary={primary}
             view={layout}
