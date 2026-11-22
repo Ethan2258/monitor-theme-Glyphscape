@@ -1,3 +1,4 @@
+import { ChoiceMenu } from "@/components/ChoiceMenu"
 import { GridIcon, RowsIcon, SearchIcon, SortIcon } from "@/components/icons"
 
 import { SORTS, type SortKey } from "@/lib/filter"
@@ -29,6 +30,8 @@ export function Toolbar({ query, sort, view, ping = true, onQuery, onSort, onVie
   // tabs and chips. Narrower, it wraps onto a line of its own, and pushed right
   // there it would hang off the end of an empty line; from the left, it reads
   // as the list's second row of controls.
+  const sorts = SORTS.filter(([key]) => ping || key !== "ping").map(([value, label]) => ({ value, label }))
+  const current = sorts.find((s) => s.value === sort)?.label ?? sorts[0].label
   return (
     <div className="flex w-full items-center gap-2 sm:w-auto xl:ml-auto">
       <label className="relative min-w-0 flex-1 sm:flex-initial">
@@ -42,19 +45,17 @@ export function Toolbar({ query, sort, view, ping = true, onQuery, onSort, onVie
           className={`${FIELD} w-full pr-2 pl-8 placeholder:text-muted-foreground sm:w-44`}
         />
       </label>
-      <label className="relative">
-        <span className="sr-only">排序方式</span>
-        <select
-          value={sort}
-          onChange={(e) => onSort(e.target.value as SortKey)}
-          className={`${FIELD} cursor-pointer appearance-none pr-7 pl-2.5`}
-        >
-          {SORTS.filter(([key]) => ping || key !== "ping").map(([key, label]) => (
-            <option key={key} value={key}>{label}</option>
-          ))}
-        </select>
-        <SortIcon className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-      </label>
+      <ChoiceMenu
+        label="排序方式"
+        title={`排序：${current}`}
+        value={sort}
+        items={sorts}
+        onPick={(next) => onSort(next)}
+        buttonClassName={`${FIELD} inline-flex cursor-pointer items-center gap-1.5 pr-2 pl-2.5 whitespace-nowrap aria-expanded:border-ring`}
+      >
+        <span>{current}</span>
+        <SortIcon className="size-3.5 text-muted-foreground" />
+      </ChoiceMenu>
       {/* Cards or a table. The table needs a laptop's width to be worth it, so a
           phone is not offered it. */}
       <div role="group" aria-label="显示方式" className="hidden h-[34px] items-center gap-0.5 rounded-lg bg-secondary/70 p-0.5 xl:flex">
