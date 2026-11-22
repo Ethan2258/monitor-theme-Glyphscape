@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react"
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react"
 
 import { Skeleton } from "@/components/ui/skeleton"
 import { daysLeft, monthUsage } from "@/components/NodeCard"
@@ -7,7 +7,8 @@ import { ResourceCharts, ResourceSkeleton } from "@/components/detail/ResourceCh
 import {
   CHART_MARGIN, isDense, PALETTE, pct, Placeholder, RING, Swatch, axisWidth, binaryAxis, useNarrow,
 } from "@/components/detail/chart"
-import { api, type Node } from "@/lib/api"
+import { history, type Node } from "@/lib/api"
+import { PingConfig, probeLines, useNodePing } from "@/components/CardPing"
 import { convert, remaining, type Rates } from "@/lib/cost"
 import {
   axisTop, bytes, cycle, despike, quarters, rollingMean, cpuName, FOREVER, money, osName, pair,
@@ -285,7 +286,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
     const per = tab === "resources" && hours >= 24 ? 2 : 1
     const points = Math.min(1440, Math.max(60, Math.round(panel / per)))
     const series = tab === "latency" ? "ping" : "metrics"
-    api<History>(`/nodes/${node.id}/metrics?hours=${hours}&points=${points}&series=${series}`)
+    history<History>(`/nodes/${node.id}/metrics?hours=${hours}&points=${points}&series=${series}`)
       .then((next) => settle(next))
       .catch((e: Error) => {
         if (!active) return
@@ -656,6 +657,15 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
   }
   const billedIn = node.currency.toUpperCase()
   const used = monthUsage(node)
+  // The latest round trip to each chosen probe, a line among the facts; the
+  // same history the node's card draws its strips from (CardPing.tsx).
+  const pingSettings = useContext(PingConfig)
+  const pingEntry = useNodePing(node.id, pingSettings.hours, pingSettings.show)
+  const pingNow = pingSettings.show
+    ? parts(...probeLines(pingEntry?.data, pingSettings.probes, pingSettings.hours).map(
+        (l) => `${l.name} ${l.latest === null ? "超时" : l.latest < 1 ? "<1 ms" : `${Math.round(l.latest)} ms`}`,
+      ))
+    : null
   const expired = days !== null && days < 0
   // The renewal line in parts, each kept whole on a line of its own: wrapped
   // anywhere, "到期" broke across two lines. A part after full-width
@@ -719,6 +729,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
           ].filter(Boolean).join(" · ")}
         />
         <Fact label="累计流量" value={`↓ ${bytes(node.total_rx)} · ↑ ${bytes(node.total_tx)}`} />
+        <Fact label="延迟" value={pingNow} />
       </Facts>
       <Facts title={price ? "费用" : "到期"}>
         <Fact

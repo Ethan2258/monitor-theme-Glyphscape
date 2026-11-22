@@ -13,6 +13,9 @@ export type Config = {
   show_cost: boolean
   primary_currency: "CNY" | "USD"
   live_rates: boolean
+  show_ping: boolean
+  ping_probes: string
+  ping_hours: "1" | "6" | "24"
   pond: boolean
   scene: "pond" | "wraith"
   pond_feed: boolean

@@ -18,6 +18,7 @@ import { applyPalette, applyScene, transitionPalette } from "@/lib/palette"
 import { preloadPond } from "@/lib/pond"
 import { preloadRealm } from "@/lib/realm"
 import { useRates } from "@/lib/rates"
+import { PingConfig } from "@/components/CardPing"
 import { cn } from "@/lib/utils"
 
 const WRAITH_ICON =
@@ -111,6 +112,13 @@ function useNodeRoute() {
     return () => removeEventListener("popstate", sync)
   }, [])
   useLayoutEffect(() => {
+    // The new page has committed: a view transition waiting on it may now take
+    // its picture (see `swapPage`), once this effect has scrolled and focused.
+    if (landed) {
+      const done = landed
+      landed = null
+      queueMicrotask(done)
+    }
     const next = arrive.current
     if (!next) return
     arrive.current = null
@@ -161,9 +169,22 @@ function swapPage(change: () => void) {
   }
   const root = document.documentElement
   root.classList.add("route-swap")
-  const swap = document.startViewTransition(() => flushSync(change))
+  // The picture of the page in view stays up while React renders the next one
+  // in a transition, in slices that leave the main thread free -- rather than
+  // in one synchronous block, which on the first visit to a node page held it
+  // for 96 ms. The route commit resolves the wait (`landed`, in useNodeRoute);
+  // a second at most, should it never come.
+  const swap = document.startViewTransition(
+    () =>
+      new Promise<void>((resolve) => {
+        landed = resolve
+        startTransition(change)
+        setTimeout(resolve, 1000)
+      }),
+  )
   void swap.finished.finally(() => root.classList.remove("route-swap"))
 }
+let landed: (() => void) | null = null
 
 const DARK_MEDIA = matchMedia("(prefers-color-scheme: dark)")
 
@@ -235,6 +256,11 @@ export default function App() {
   const [meError, setMeError] = useState("")
   const [config, setConfig] = useState<Config | null>(cachedConfig)
   const settings = config ?? DEFAULTS
+  // The latency block's settings, for the cards and the node page (CardPing.tsx).
+  const ping = useMemo(
+    () => ({ show: settings.show_ping, probes: settings.ping_probes, hours: Number(settings.ping_hours) || 1 }),
+    [settings.show_ping, settings.ping_probes, settings.ping_hours],
+  )
   // The scene behind the head of the page: the koi pond or the ghost realm, each
   // in its own palette. The visitor's own choice, else the operator's default
   // (as this browser saw it last, until the settings arrive). Put away, the
@@ -385,6 +411,7 @@ export default function App() {
   const notice = settings.notice.trim()
 
   return (
+    <PingConfig value={ping}>
     <div className="flex min-h-svh flex-col">
       {/* For the keyboard: past the header, the overview and the globe's
           chips, straight to the nodes. Out of sight until focused, then
@@ -535,5 +562,6 @@ export default function App() {
         </p>
       </footer>
     </div>
+    </PingConfig>
   )
 }

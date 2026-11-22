@@ -194,6 +194,40 @@ export function throughput(ids: Iterable<number>): { at: number; rx: number; tx:
   })
 }
 
+/**
+ * A history query (`/nodes/{id}/metrics`), queued. The hub answers a fifth
+ * concurrent one with 503 rather than queueing it, and this page asks for
+ * several at once -- the throughput fill, the cards' latency, a node page --
+ * so they wait here instead, two at a time, and a 503 is tried again shortly,
+ * three times at most.
+ */
+const HISTORY_AT_ONCE = 2
+const historyQueue: (() => void)[] = []
+let historyRunning = 0
+function historyPump() {
+  while (historyRunning < HISTORY_AT_ONCE && historyQueue.length) {
+    historyRunning++
+    historyQueue.shift()!()
+  }
+}
+export function history<T>(path: string, attempt = 0): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    historyQueue.push(() => {
+      api<T>(path)
+        .then(resolve, (e: unknown) => {
+          if (e instanceof ApiError && e.status === 503 && attempt < 3) {
+            setTimeout(() => history<T>(path, attempt + 1).then(resolve, reject), 1500 * (attempt + 1))
+          } else reject(e)
+        })
+        .finally(() => {
+          historyRunning--
+          historyPump()
+        })
+    })
+    historyPump()
+  })
+}
+
 // Past this many reporting nodes the fill is skipped: one request each, and a
 // sum missing some of them would draw a dip that never happened.
 const BACKFILL_MAX = 48
@@ -213,11 +247,10 @@ export async function backfill(ids: number[], from: number, to: number) {
   const minutes = Math.ceil((Date.now() - from) / 60_000) + 2
   const answers: { id: number; metrics: Bucket[]; step: number }[] = []
   try {
-    // Four at a time, so a larger fleet does not open them all at once.
-    for (let i = 0; i < ids.length; i += 4) {
-      const batch = ids.slice(i, i + 4)
-      const got = await Promise.all(batch.map((id) =>
-        api<{ metrics?: Bucket[]; step?: number }>(`/nodes/${id}/metrics?hours=${hours}&points=${Math.min(1440, hours * 60)}&series=metrics`)
+    // Queued with every other history query (`history`).
+    {
+      const got = await Promise.all(ids.map((id) =>
+        history<{ metrics?: Bucket[]; step?: number }>(`/nodes/${id}/metrics?hours=${hours}&points=${Math.min(1440, hours * 60)}&series=metrics`)
           .then((h) => ({ id, metrics: (h?.metrics ?? []).slice(-minutes), step: h?.step ?? 60 }))))
       answers.push(...got)
     }

@@ -1,5 +1,6 @@
 import { memo } from "react"
 
+import { PingCell } from "@/components/CardPing"
 import { Country, daysLeft, deployed, monthUsage } from "@/components/NodeCard"
 import { Card } from "@/components/ui/card"
 import type { Node } from "@/lib/api"
@@ -8,7 +9,7 @@ import { bytes, cycle, FOREVER, money, pct as formatPct, percent, rate, sinceSee
 import { cn } from "@/lib/utils"
 
 // One grid for the heading and every row, so the columns line up.
-const COLUMNS = "grid grid-cols-[minmax(13rem,2.2fr)_minmax(6.5rem,1fr)_repeat(3,minmax(6.5rem,1fr))_minmax(8rem,1.15fr)_minmax(8rem,1.15fr)_minmax(10rem,1.5fr)] items-center gap-x-5"
+const COLUMNS = "grid grid-cols-[minmax(13rem,2.2fr)_minmax(6.5rem,1fr)_repeat(3,minmax(6.5rem,1fr))_minmax(8rem,1.15fr)_minmax(8.5rem,1.15fr)_minmax(8rem,1.15fr)_minmax(10rem,1.5fr)] items-center gap-x-5"
 
 /** A percentage over a thin bar: red past nine tenths, like the cards' meters. */
 const Bar = memo(function Bar({ pct, foot }: { pct: number | null; foot?: string }) {
@@ -41,7 +42,7 @@ export function NodeTable({ nodes, price, rates, primary, onOpen }: {
 }) {
   return (
     <Card className="gap-0 overflow-x-auto py-0">
-      <div className="min-w-[68rem]">
+      <div className="min-w-[74rem]">
         <div className={cn(COLUMNS, "border-b px-5 py-2.5 text-xs text-muted-foreground")}>
           <span>节点</span>
           <span>状态</span>
@@ -49,6 +50,7 @@ export function NodeTable({ nodes, price, rates, primary, onOpen }: {
           <span>内存</span>
           <span>硬盘</span>
           <span>网速</span>
+          <span>延迟</span>
           <span>本期流量</span>
           <span>{price ? "价格 · 剩余" : "到期"}</span>
         </div>
@@ -123,6 +125,7 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
         <div className="truncate"><span className="text-rx">↓</span> {m ? rate(m.net_rx) : "—"}</div>
         <div className="mt-0.5 truncate"><span className="text-tx">↑</span> {m ? rate(m.net_tx) : "—"}</div>
       </div>
+      <PingCell id={n.id} />
       <div className="min-w-0">
         {n.traffic_limit > 0 ? (
           <Bar pct={percent(used, n.traffic_limit)} foot={`${bytes(used)} / ${bytes(n.traffic_limit)}`} />
@@ -148,7 +151,7 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
         <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
           {price && worth ? `剩余 ${pick(worth)} · ` : ""}
           <span className={days !== null && days < 0 ? "text-hot" : days !== null && days <= 7 ? "text-warn" : undefined}>
-            {days === null ? "永不到期" : days < 0 ? `已过期 ${-days} 天` : days === 0 ? "今天到期" : `${days} 天到期`}
+            {days === null ? "长期" : days < 0 ? `已过期 ${-days} 天` : days === 0 ? "今天到期" : `${days} 天到期`}
           </span>
         </div>
       </div>

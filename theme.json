@@ -2,7 +2,7 @@
   "name": "字景 · Glyphscape",
   "short": "inkpond",
   "description": "默认主题的版式，页首一片字符场景，可在锦鲤池塘和幽灵鬼域之间切换，各带一套配色；点阵地球仪标出节点所在，价格与剩余价值按实时汇率折成人民币和美元",
-  "version": "1.2.18",
+  "version": "1.2.19",
   "author": "Ethan2258",
   "url": "https://github.com/Ethan2258/monitor-theme-Glyphscape",
   "config": [
@@ -103,6 +103,45 @@
       "label": "实时汇率",
       "default": true,
       "help": "访客浏览器每天自动取最新汇率（同时问 Cloudflare、jsDelivr、欧洲央行三个公开源，取日期最新的）；关掉则用主题内置的参考汇率，页面不向第三方发请求"
+    },
+    {
+      "type": "title",
+      "label": "延迟"
+    },
+    {
+      "key": "show_ping",
+      "type": "boolean",
+      "label": "显示三网延迟",
+      "default": true,
+      "help": "节点卡片底部和详情页显示各探测点的延迟：当前值、最近一段时间的色块（越深越慢，红色为超时）和丢包率。需要在 hub 里配置延迟探测"
+    },
+    {
+      "key": "ping_probes",
+      "type": "string",
+      "label": "显示的探测点",
+      "default": "",
+      "help": "按名称填写，用逗号分隔，例如：电信,联通,移动。留空则自动选电信、联通、移动，没有时取前三个"
+    },
+    {
+      "key": "ping_hours",
+      "type": "select",
+      "label": "色块时间范围",
+      "default": "1",
+      "help": "卡片上色块条覆盖的时间",
+      "options": [
+        {
+          "value": "1",
+          "label": "最近 1 小时"
+        },
+        {
+          "value": "6",
+          "label": "最近 6 小时"
+        },
+        {
+          "value": "24",
+          "label": "最近 24 小时"
+        }
+      ]
     },
     {
       "type": "title",
