@@ -96,7 +96,7 @@ const StatusBadge = memo(function StatusBadge({ word, label, full, tone }: { wor
     // Muted once it stops reporting: the figures on the page are genuine, merely
     // no longer current.
     <Badge
-      title={full}
+      data-tip={full}
       className={cn("tnum shrink-0 gap-1.5 font-normal", tone !== "online" && "text-muted-foreground")}
     >
       <span
@@ -165,7 +165,7 @@ function trafficFoot(node: Node) {
 // blank corner asserts neither. Past the date is the page's red; within a week
 // of it, the amber before the red.
 function Expiry({ days }: { days: number | null }) {
-  if (days === null) return <span className="text-xs text-muted-foreground" title="没有到期日">长期</span>
+  if (days === null) return <span className="text-xs text-muted-foreground" data-tip="没有到期日">长期</span>
   const tone = days < 0 ? "text-hot" : days <= 7 ? "text-warn" : "text-muted-foreground"
   return (
     <span className={cn("tnum text-xs", tone)}>
@@ -199,7 +199,7 @@ const Price = memo(function Price({ price, currency, billing_cycle, days, rates,
     <div className="mt-2.5 flex items-center justify-between gap-3 text-xs">
       <span
         className="tnum inline-flex min-w-0 items-center gap-1.5"
-        title={billed ? `账单 ${money(node.price, code)}` : undefined}
+        data-tip={billed ? `账单 ${money(node.price, code)}` : undefined}
       >
         <TagIcon className="size-3 shrink-0 text-muted-foreground" />
         {node.price > 0 ? (
@@ -214,7 +214,7 @@ const Price = memo(function Price({ price, currency, billing_cycle, days, rates,
       {left !== null && (
         <span
           className="tnum inline-flex min-w-0 shrink-0 items-baseline gap-1.5"
-          title={`剩余 ${days} 天按当前价格折算${worth ? `：${money(worth.cny, "CNY")} ≈ ${money(worth.usd, "USD")}` : ""}`}
+          data-tip={`剩余 ${days} 天按当前价格折算${worth ? `：${money(worth.cny, "CNY")} ≈ ${money(worth.usd, "USD")}` : ""}`}
         >
           <span className="text-muted-foreground">剩余</span>
           <span className="font-medium">{worth ? pick(worth) : money(left, code)}</span>
@@ -244,7 +244,7 @@ const CardHead = memo(function CardHead({ node, name, os, virt, arch, days, stat
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1.5">
           <Country node={node} />
-          <h3 className="truncate font-medium @max-[20rem]:text-[14px] @max-[20rem]:tracking-tight" title={name}>{name}</h3>
+          <h3 className="truncate font-medium @max-[20rem]:text-[14px] @max-[20rem]:tracking-tight" data-tip={name}>{name}</h3>
         </div>
         <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
           {os && <OsIcon os={os} />}
@@ -334,7 +334,7 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
         <p
           // A phone shows one card a row, with no neighbour to line up with.
           className={cn("mt-2 h-4 truncate text-xs text-muted-foreground", !node.public_remark && "max-sm:hidden")}
-          title={node.public_remark || undefined}
+          data-tip={node.public_remark || undefined}
           aria-hidden={node.public_remark ? undefined : true}
         >
           {node.public_remark}

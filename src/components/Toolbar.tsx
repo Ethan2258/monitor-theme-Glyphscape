@@ -62,7 +62,8 @@ export function Toolbar({ query, sort, view, ping = true, onQuery, onSort, onVie
         {([["cards", "卡片", GridIcon], ["table", "列表", RowsIcon]] as const).map(([value, label, Icon]) => (
           <button
             key={value}
-            title={label}
+            data-tip={label}
+            aria-label={label}
             aria-pressed={view === value}
             onClick={() => onView(value)}
             className={`inline-flex size-[30px] items-center justify-center rounded-md transition-colors ${

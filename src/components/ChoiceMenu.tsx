@@ -91,7 +91,7 @@ export function ChoiceMenu<T extends string>({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={title}
-        title={title}
+        data-tip={title}
         onClick={() => {
           if (!open) onOpen?.()
           setOpen(!open)

@@ -127,7 +127,7 @@ export function RangeControl({ window, value, onChange, label, inset }: {
       aria-valuemax={w1}
       aria-valuenow={Math.round(ts)}
       aria-valuetext={SPOKEN.format(ts)}
-      title={`${name} · ${label(ts)}`}
+      data-tip={`${name} · ${label(ts)}`}
       onPointerDown={grab(mode)}
       {...pointer}
       onKeyDown={keys(mode)}

@@ -786,7 +786,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary, tab: cont
           kinds of control. The tabs are underlined headings across the card,
           the ranges smaller pills beneath -- drawn alike, the two rows read as
           one control wrapped onto a second line. */}
-      <div ref={area} className="space-y-3 border-t pt-3">
+      <div ref={area} id="node-charts" className="space-y-3 scroll-mt-4 border-t pt-3">
         {/* A tablist as the pattern has it: one tab stop, the arrows, Home and
             End moving between the tabs and choosing as they go. */}
         <div
@@ -857,7 +857,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary, tab: cont
               role="switch"
               aria-checked={smooth}
               onClick={() => setSmooth((s) => !s)}
-              title="滤掉偶发的单点尖峰"
+              data-tip="滤掉偶发的单点尖峰"
               className={`inline-flex min-h-9 items-center gap-2 rounded-md px-1 text-xs text-muted-foreground hover:text-foreground sm:min-h-6 ${RING}`}
             >
               <span

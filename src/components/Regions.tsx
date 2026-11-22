@@ -87,7 +87,7 @@ export function Regions({ nodes, selected, onPick }: {
               <button
                 key={r.code}
                 aria-pressed={on}
-                title={`${name} · ${r.count} 台${r.online < r.count ? `，${r.online} 在线` : ""}`}
+                data-tip={`${name} · ${r.count} 台${r.online < r.count ? `，${r.online} 在线` : ""}`}
                 onClick={() => onPick(on ? null : r.code)}
                 className={cn(chip, "shrink-0", on && "border-foreground/60 bg-secondary")}
               >

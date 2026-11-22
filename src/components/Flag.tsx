@@ -22,7 +22,7 @@ export function Flag({ code, className }: { code: string; className?: string }) 
     <img
       src={src}
       alt={code}
-      title={code}
+      data-tip={code}
       className={cn("h-3 w-4.5 shrink-0 rounded-[2px] ring-1 ring-foreground/10", className)}
     />
   )

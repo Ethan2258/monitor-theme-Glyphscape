@@ -7,6 +7,7 @@ import { Hero } from "@/components/Hero"
 import { NodeHead } from "@/components/NodeCard"
 import { NodeList } from "@/components/NodeList"
 import { SceneStage } from "@/components/SceneStage"
+import { TipLayer } from "@/components/Tip"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -89,6 +90,29 @@ function store(key: string, value: string) {
 // unknown path, so no server-side route is required.
 type DetailTab = "resources" | "latency"
 
+/**
+ * Scrolls a node page down to its charts, for a visit meant for them -- from a
+ * card's latency strip, or a link with `?tab=latency` -- where they would start
+ * in the lower half of the screen or below it: on a phone, a whole screen of
+ * facts above them. The page renders in stages, so the charts may not be there
+ * yet; it then waits for them, a second and a half at most, and glides there
+ * rather than jumping. False if they never came.
+ */
+function revealCharts(smooth: boolean) {
+  const area = document.getElementById("node-charts")
+  if (!area) return false
+  const top = area.getBoundingClientRect().top
+  if (top > innerHeight * 0.45) area.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "instant" })
+  return true
+}
+function revealChartsSoon() {
+  const until = performance.now() + 1500
+  const look = () => {
+    if (!revealCharts(true) && performance.now() < until) requestAnimationFrame(look)
+  }
+  requestAnimationFrame(look)
+}
+
 function useNodeRoute() {
   const read = (): { id: number | null; tab: DetailTab } => {
     const match = location.pathname.match(/^\/node\/(\d+)/)
@@ -105,7 +129,7 @@ function useNodeRoute() {
   // Where to scroll and what to focus once the new page is on screen: applied
   // in the commit that shows it, so neither page is ever seen at the other's
   // scroll position.
-  const arrive = useRef<{ top: number; focus: number | null | "title" } | null>(null)
+  const arrive = useRef<{ top: number; focus: number | null | "title"; charts?: boolean } | null>(null)
   useEffect(() => {
     const sync = () => {
       const next = read()
@@ -127,16 +151,18 @@ function useNodeRoute() {
     if (!next) return
     arrive.current = null
     scrollTo(0, next.top)
+    if (next.charts && !revealCharts(false)) revealChartsSoon()
     // Keyboard and screen-reader visitors land on the node's name, or back on
     // the card they opened, rather than at the top of the document.
+    // Sent down to the charts, onto their latency tab instead, where the page now is.
     const target =
       next.focus === "title"
-        ? document.querySelector<HTMLElement>("h1")
+        ? (next.charts && document.getElementById("node-tab-latency")) || document.querySelector<HTMLElement>("h1")
         : next.focus === null
           ? null
           : document.querySelector<HTMLElement>(`[data-node="${next.focus}"]`)
     if (target) {
-      if (next.focus === "title" && !target.hasAttribute("tabindex")) target.tabIndex = -1
+      if (target.tagName === "H1" && !target.hasAttribute("tabindex")) target.tabIndex = -1
       target.focus({ preventScroll: true })
     }
   }, [route.id])
@@ -150,7 +176,11 @@ function useNodeRoute() {
     }
     if (location.pathname + location.search !== path) history.pushState({}, "", path)
     const back = next === null && from !== null
-    arrive.current = { top: back ? listScroll.current : 0, focus: next === null ? (back ? opened.current : null) : "title" }
+    arrive.current = {
+      top: back ? listScroll.current : 0,
+      focus: next === null ? (back ? opened.current : null) : "title",
+      charts: next !== null && tab === "latency",
+    }
     const target = { id: next, tab: next === null ? ("resources" as const) : tab }
     current.current = target
     swapPage(() => setRoute(target))
@@ -163,6 +193,12 @@ function useNodeRoute() {
     const next = { id, tab }
     current.current = next
     setRoute(next)
+  }, [])
+  // Opened from a link to a node's latency, at the top of the page: down to the
+  // charts once they are drawn. A reload further down keeps its place.
+  useEffect(() => {
+    const opening = current.current
+    if (opening.id !== null && opening.tab === "latency" && scrollY === 0) revealChartsSoon()
   }, [])
   return [route.id, route.tab, go, setTab] as const
 }
@@ -436,6 +472,7 @@ export default function App() {
   return (
     <PingConfig value={ping}>
     <div className="flex min-h-svh flex-col">
+      <TipLayer />
       {/* For the keyboard: past the header, the overview and the globe's
           chips, straight to the nodes. Out of sight until focused, then
           shown at the top left over everything. */}

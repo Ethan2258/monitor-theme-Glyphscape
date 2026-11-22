@@ -183,7 +183,7 @@ export const LatencyChart = memo(function LatencyChart({
             <button
               type="button"
               onClick={reset}
-              title="重置缩放 (Esc)"
+              data-tip="重置缩放 (Esc)"
               className={`inline-flex min-h-6 items-center rounded-md border px-2 text-xs text-foreground hover:bg-muted ${RING}`}
             >
               重置缩放

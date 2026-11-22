@@ -253,7 +253,7 @@ function Overview({ nodes, cost, rates, primary, onOpen }: {
                 type="button"
                 onClick={() => onOpen(busiest.id)}
                 className="min-w-0 max-w-[16rem] cursor-pointer truncate text-foreground underline-offset-4 hover:underline"
-                title={`查看 ${busiest.name} 详情`}
+                data-tip={`查看 ${busiest.name} 详情`}
               >
                 {busiest.name}
               </button>
@@ -315,12 +315,12 @@ function Overview({ nodes, cost, rates, primary, onOpen }: {
               type="button"
               onClick={() => onOpen(next.node.id)}
               className="block max-w-full cursor-pointer truncate text-left underline-offset-4 hover:underline"
-              title={`查看 ${next.node.name} 详情`}
+              data-tip={`查看 ${next.node.name} 详情`}
             >
               {next.node.name}
             </button>
           ) : (
-            <span className="block truncate" title={next?.node.name}>{next ? next.node.name : "—"}</span>
+            <span className="block truncate" data-tip={next?.node.name}>{next ? next.node.name : "—"}</span>
           )}
         </Stat>
       </dl>

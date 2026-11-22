@@ -247,22 +247,22 @@ function ProbeRow({ line, hours }: { line: ProbeLine; hours: number }) {
   const summary = `最近 ${hours} 小时 · 常态 ${line.typical === null ? "—" : ms(line.typical)}${line.loss > 0 ? ` · 丢包 ${line.loss.toFixed(1)} %` : ""}（绿 <${MID_MS} ms · 黄 ${MID_MS}–${SLOW_MS} ms · 红 ≥${SLOW_MS} ms / 超时）`
   return (
     <div className="grid grid-cols-[4.25rem_minmax(0,1fr)_4.75rem] items-center gap-2 text-xs">
-      <span className="truncate text-muted-foreground transition-colors group-hover/ping:text-foreground" title={`${line.name} · ${summary}`}>{line.name}</span>
+      <span className="truncate text-muted-foreground transition-colors group-hover/ping:text-foreground" data-tip={`${line.name} · ${summary}`}>{line.name}</span>
       <span
         className="flex h-2.5 min-w-0 gap-px"
         role="img"
         aria-label={`${line.name} 最近 ${hours} 小时延迟，绿顺畅、黄偏高、红较慢或超时`}
-        title={summary}
+        data-tip={summary}
       >
         {line.slots.map((v, i) => (
           <span
             key={i}
             className={cn("h-full min-w-0 flex-1 rounded-[1px]", shade(v, line.typical))}
-            title={`${hhmm(line.start + i * step)} · ${v === undefined ? "无数据" : ms(v)}`}
+            data-tip={`${hhmm(line.start + i * step)} · ${v === undefined ? "无数据" : ms(v)}`}
           />
         ))}
       </span>
-      <span className={cn("tnum text-right whitespace-nowrap", latencyTone(line.latest))} title={summary}>
+      <span className={cn("tnum text-right whitespace-nowrap", latencyTone(line.latest))} data-tip={summary}>
         {ms(line.latest)}
         {line.loss >= 1 && <span className={cn("ml-1 text-[10px]", lossTone(line.loss))}>{Math.round(line.loss)}%</span>}
       </span>
@@ -348,7 +348,7 @@ export const PingCell = memo(function PingCell({ id, onOpen }: { id: number; onO
       ref={box}
       role={clickable ? "button" : undefined}
       tabIndex={clickable ? 0 : undefined}
-      title={clickable ? "点击查看网络延迟图表" : undefined}
+      data-tip={clickable ? "点击查看网络延迟图表" : undefined}
       onClick={clickable ? (e) => { e.stopPropagation(); onOpen(id, "latency") } : undefined}
       onKeyDown={clickable ? (e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -399,7 +399,7 @@ export function PingSummaryLines({ lines, onClick }: { lines: ProbeLine[]; onCli
     <button
       type="button"
       onClick={onClick}
-      title="查看网络延迟图表"
+      data-tip="查看网络延迟图表"
       className="cursor-pointer rounded-sm text-right outline-none hover:underline hover:decoration-border hover:underline-offset-4 focus-visible:ring-[3px] focus-visible:ring-ring/50"
     >
       {content}

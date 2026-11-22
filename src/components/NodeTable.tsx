@@ -8,8 +8,13 @@ import { convert, remaining, type Rates } from "@/lib/cost"
 import { bytes, cycle, FOREVER, money, pct as formatPct, percent, rate, sinceSeen, uptime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-// One grid for the heading and every row, so the columns line up.
-const COLUMNS = "grid grid-cols-[minmax(13rem,2.2fr)_minmax(6.5rem,1fr)_repeat(3,minmax(6.5rem,1fr))_minmax(8rem,1.15fr)_minmax(8.5rem,1.15fr)_minmax(8rem,1.15fr)_minmax(10rem,1.5fr)] items-center gap-x-5"
+// One grid for the heading and every row, so the columns line up. Each
+// column at its narrowest still holds its longest usual figure (the load
+// average, "超时 · 67 · 134 ms", "剩余 ¥788.82 · 1000 天到期"), and all of them
+// together, with the gaps and padding, come to 75rem: the 1215px a 1280 window
+// leaves the table, so it is whole wherever it is offered, with no sideways
+// scroll cutting off the price column.
+const COLUMNS = "grid grid-cols-[minmax(10rem,2.2fr)_minmax(5.5rem,1fr)_minmax(6rem,1fr)_repeat(2,minmax(5.5rem,1fr))_minmax(6.5rem,1.15fr)_minmax(8rem,1.15fr)_minmax(7.5rem,1.15fr)_minmax(10rem,1.5fr)] items-center gap-x-4"
 
 /** A percentage over a thin bar: red past nine tenths, like the cards' meters. */
 const Bar = memo(function Bar({ pct, foot }: { pct: number | null; foot?: string }) {
@@ -42,7 +47,7 @@ export function NodeTable({ nodes, price, rates, primary, onOpen }: {
 }) {
   return (
     <Card className="gap-0 overflow-x-auto py-0">
-      <div className="min-w-[74rem]">
+      <div className="min-w-[75rem]">
         <div className={cn(COLUMNS, "border-b px-5 py-2.5 text-xs text-muted-foreground")}>
           <span>节点</span>
           <span>状态</span>
@@ -103,7 +108,7 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <Country node={n} />
-          <span className="truncate text-sm font-medium" title={n.name}>{n.name}</span>
+          <span className="truncate text-sm font-medium" data-tip={n.name}>{n.name}</span>
         </div>
         <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
           {n.public_remark || [n.virt !== "none" && n.virt, n.arch, n.cpu_cores ? `${n.cpu_cores} 核` : ""].filter(Boolean).join(" · ") || "等待首次上报"}
@@ -137,7 +142,7 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
       </div>
       <div className="tnum min-w-0 text-xs">
         {price && (
-          <div className="truncate" title={billed ? `账单 ${money(n.price, code)}` : undefined}>
+          <div className="truncate" data-tip={billed ? `账单 ${money(n.price, code)}` : undefined}>
             {n.price > 0 ? (
               <>
                 {billed ? `≈${pick(billed)}` : money(n.price, code)}
