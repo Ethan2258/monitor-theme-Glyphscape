@@ -18,14 +18,14 @@
       "type": "boolean",
       "label": "显示总览",
       "default": true,
-      "help": "池塘里的总览：在线数、实时网速、今日流量、月均支出、剩余价值、最近到期"
+      "help": "页首总览：在线数、实时网速、今日流量、月均支出、剩余价值、最近到期"
     },
     {
       "key": "show_globe",
       "type": "boolean",
       "label": "显示地球仪",
       "default": true,
-      "help": "池塘里的点阵地球仪和地区标签，点击可按地区筛选节点"
+      "help": "页首的点阵地球仪和地区标签，点击可按地区筛选节点"
     },
     {
       "key": "show_toolbar",
@@ -47,11 +47,11 @@
         },
         {
           "value": "light",
-          "label": "暖纸（浅色）"
+          "label": "浅色（暖纸 / 阴天）"
         },
         {
           "value": "dark",
-          "label": "暖墨（深色）"
+          "label": "深色（暖墨 / 长夜）"
         }
       ]
     },
