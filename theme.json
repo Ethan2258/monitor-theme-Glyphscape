@@ -2,7 +2,7 @@
   "name": "字景 · Glyphscape",
   "short": "inkpond",
   "description": "默认主题的版式，页首一片字符场景，可在锦鲤池塘和幽灵鬼域之间切换，各带一套配色；点阵地球仪标出节点所在，价格与剩余价值按实时汇率折成人民币和美元",
-  "version": "1.2.15",
+  "version": "1.2.16",
   "author": "Ethan2258",
   "url": "https://github.com/Ethan2258/monitor-theme-Glyphscape",
   "config": [

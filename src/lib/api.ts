@@ -153,27 +153,38 @@ export async function api<T>(path: string): Promise<T> {
  * nodes, which a sum taken at arrival could not be split back into. Held beside
  * the stream that feeds it rather than in the tile that draws it: the summary
  * unmounts while a node page is open, so a buffer held there would restart
- * empty on every return. Two minutes at the hub's push interval.
+ * empty on every return.
+ *
+ * Ten minutes, on a time axis: each entry carries when it was taken. Live pushes
+ * come every two seconds; what came before the page opened, or while it was
+ * hidden, is filled from the hub's history in its minute buckets (`backfill`),
+ * so the line is whole from the first paint and after a return, rather than a
+ * sliver growing from the right edge.
  */
-const KEEP = 60
-export const speedHistory: Map<number, { rx: number; tx: number }>[] = []
+export const SPEED_WINDOW = 10 * 60_000
+type Speeds = Map<number, { rx: number; tx: number }>
+export const speedHistory: { at: number; speeds: Speeds }[] = []
 
-export function sample(nodes: Node[]) {
-  const push = new Map<number, { rx: number; tx: number }>()
-  for (const n of nodes) {
-    if (n.online && n.metrics) push.set(n.id, { rx: n.metrics.net_rx, tx: n.metrics.net_tx })
-  }
-  speedHistory.push(push)
-  if (speedHistory.length > KEEP) speedHistory.shift()
+function trimSpeeds(now: number) {
+  while (speedHistory.length && speedHistory[0].at < now - SPEED_WINDOW) speedHistory.shift()
 }
 
-/** The throughput line of the nodes `ids`: their sum in each push kept. */
-export function throughput(ids: Iterable<number>): { rx: number; tx: number }[] {
+export function sample(nodes: Node[], at = Date.now()) {
+  const speeds: Speeds = new Map()
+  for (const n of nodes) {
+    if (n.online && n.metrics) speeds.set(n.id, { rx: n.metrics.net_rx, tx: n.metrics.net_tx })
+  }
+  speedHistory.push({ at, speeds })
+  trimSpeeds(at)
+}
+
+/** The throughput line of the nodes `ids`: their sum in each entry kept, with its time. */
+export function throughput(ids: Iterable<number>): { at: number; rx: number; tx: number }[] {
   const wanted = [...ids]
-  return speedHistory.map((push) => {
-    const total = { rx: 0, tx: 0 }
+  return speedHistory.map(({ at, speeds }) => {
+    const total = { at, rx: 0, tx: 0 }
     for (const id of wanted) {
-      const speed = push.get(id)
+      const speed = speeds.get(id)
       if (speed) {
         total.rx += speed.rx
         total.tx += speed.tx
@@ -181,6 +192,53 @@ export function throughput(ids: Iterable<number>): { rx: number; tx: number }[] 
     }
     return total
   })
+}
+
+// Past this many reporting nodes the fill is skipped: one request each, and a
+// sum missing some of them would draw a dip that never happened.
+const BACKFILL_MAX = 48
+
+/**
+ * Fills the line between `from` and `to` (ms) from the hub's minute buckets of
+ * every node in `ids`, each placed at its bucket's middle, wherever no entry
+ * already lies within half a minute of it: the start of the window and any
+ * gap, whatever else the line holds. All or nothing: if
+ * any node's history fails, nothing is added, for the same reason. A hub without
+ * the history, or one that keeps it from anonymous visitors, simply adds none.
+ */
+export async function backfill(ids: number[], from: number, to: number) {
+  if (!ids.length || ids.length > BACKFILL_MAX || to - from < 60_000) return
+  type Bucket = { ts: number; net_rx: number; net_tx: number }
+  const hours = Math.min(24, Math.max(1, Math.ceil((Date.now() - from) / 3_600_000)))
+  const minutes = Math.ceil((Date.now() - from) / 60_000) + 2
+  const answers: { id: number; metrics: Bucket[]; step: number }[] = []
+  try {
+    // Four at a time, so a larger fleet does not open them all at once.
+    for (let i = 0; i < ids.length; i += 4) {
+      const batch = ids.slice(i, i + 4)
+      const got = await Promise.all(batch.map((id) =>
+        api<{ metrics?: Bucket[]; step?: number }>(`/nodes/${id}/metrics?hours=${hours}&points=${Math.min(1440, hours * 60)}&series=metrics`)
+          .then((h) => ({ id, metrics: (h?.metrics ?? []).slice(-minutes), step: h?.step ?? 60 }))))
+      answers.push(...got)
+    }
+  } catch {
+    return
+  }
+  const filled = new Map<number, Speeds>()
+  for (const { id, metrics, step } of answers) {
+    for (const b of metrics) {
+      const at = b.ts * 1000 + (step * 1000) / 2
+      if (at < from || at >= to) continue
+      if (speedHistory.some((e) => Math.abs(e.at - at) < 30_000)) continue
+      let speeds = filled.get(at)
+      if (!speeds) filled.set(at, (speeds = new Map()))
+      speeds.set(id, { rx: b.net_rx, tx: b.net_tx })
+    }
+  }
+  if (!filled.size) return
+  for (const [at, speeds] of filled) speedHistory.push({ at, speeds })
+  speedHistory.sort((a, b) => a.at - b.at)
+  trimSpeeds(Date.now())
 }
 
 /** A malformed report must not remove every other node from the page. */
@@ -259,19 +317,18 @@ export function useNodes() {
     let retry: ReturnType<typeof setTimeout> | null = null
     let silent: ReturnType<typeof setTimeout> | null = null
 
-    // Set by `resume`. The throughput line is drawn by position, one point per
-    // push, so the samples from before the page was hidden, or the stream went
-    // silent, would join the new ones as if no time had passed in between. They
-    // are dropped on the first arrival rather than at once, which would read as
-    // 0 B/s beside figures that are merely stale.
-    let gap = false
+    // The throughput line is on a time axis, so a gap -- the page hidden, the
+    // stream silent -- is time with no pushes. The first arrival on load, and
+    // the first after a return, fill it from the hub's minute history.
+    let gap = true
     let previous = new Map<number, Node>()
     const receive = (list: Node[]) => {
       const safe = reuseNodes(previous, safeNodes(list))
       previous = new Map(safe.map((n) => [n.id, n]))
-      if (gap) speedHistory.length = 0
+      const now = Date.now()
+      if (gap) void backfill(safe.filter((n) => n.online && n.metrics).map((n) => n.id), now - SPEED_WINDOW, now)
       gap = false
-      sample(safe)
+      sample(safe, now)
       // Not mid-way through a palette change, where a full re-render would stall it.
       whenStill("nodes", () => {
         setNodes(safe)

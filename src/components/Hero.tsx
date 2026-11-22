@@ -2,7 +2,7 @@ import { InIcon, OutIcon } from "@/components/icons"
 
 import { daysLeft, deployed } from "@/components/NodeCard"
 import { Regions } from "@/components/Regions"
-import { throughput, type Node } from "@/lib/api"
+import { SPEED_WINDOW, throughput, type Node } from "@/lib/api"
 import { monthly, remaining, sum, type Rates } from "@/lib/cost"
 import { bytes, money, pct, rate } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -22,31 +22,66 @@ function Figure({ text, className }: { text: string; className?: string }) {
  * The fleet's throughput over the last two minutes, one point per push: in,
  * sky; out, terracotta. Both on one scale, so the two stay comparable.
  */
+/**
+ * The line's points at one grain: pushes two seconds apart averaged into ten
+ * seconds, beside the hub's minute buckets that fill what came before. At their
+ * own grain the live pushes drew a jagged fringe at the right edge of an
+ * otherwise smooth line.
+ */
+const GRAIN = 10_000
+function evenGrain(history: { at: number; rx: number; tx: number }[]) {
+  const out: { at: number; rx: number; tx: number }[] = []
+  let bin: { key: number; at: number; rx: number; tx: number; n: number } | null = null
+  const flush = () => {
+    if (bin) out.push({ at: bin.at / bin.n, rx: bin.rx / bin.n, tx: bin.tx / bin.n })
+    bin = null
+  }
+  for (let i = 0; i < history.length; i++) {
+    const s = history[i]
+    const next = history[i + 1]
+    const prev = history[i - 1]
+    // A minute bucket (no neighbour within half a minute) stands on its own.
+    const coarse = (!prev || s.at - prev.at > 30_000) && (!next || next.at - s.at > 30_000)
+    if (coarse) {
+      flush()
+      out.push(s)
+      continue
+    }
+    const key = Math.floor(s.at / GRAIN)
+    if (bin && bin.key !== key) flush()
+    bin ??= { key, at: 0, rx: 0, tx: 0, n: 0 }
+    bin.at += s.at
+    bin.rx += s.rx
+    bin.tx += s.tx
+    bin.n++
+  }
+  flush()
+  return out
+}
+
 function Wake({ ids }: { ids: number[] }) {
-  const history = throughput(ids)
-  // A line needs two points, which the second push brings, four seconds in.
-  // Until then a dotted level line says the line is being recorded.
+  const history = evenGrain(throughput(ids))
+  // A line needs two points. The hub's history usually gives them at once; a
+  // hub without it, the second push, four seconds in. Until then a dotted
+  // level line says the line is being recorded.
   if (history.length < 2) {
     return (
       <div className="mt-4">
         <div className="flex h-10 items-end sm:h-14">
           <div className="w-full border-t border-dashed border-muted-foreground/40" />
         </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">正在记录最近两分钟的网速…</div>
+        <div className="mt-1 text-[11px] text-muted-foreground">正在记录最近十分钟的网速…</div>
       </div>
     )
   }
   const top = Math.max(...history.flatMap((s) => [s.rx, s.tx]), 1)
-  // Each push has its slot on the two-minute axis, the newest at 现在, so a
-  // line of a few points starts part-way across rather than stretching a few
-  // seconds over the whole two minutes. SLOTS is the number of pushes api.ts
-  // keeps (KEEP there).
-  const SLOTS = 60
-  const step = 100 / (SLOTS - 1)
-  const start = 100 - (history.length - 1) * step
+  // On a time axis: the newest at 现在, ten minutes back at the left edge. A
+  // line with nothing older starts part-way across rather than stretching a few
+  // seconds over the whole span.
+  const end = history[history.length - 1].at
   type P = [number, number][]
   const points = (pick: (s: { rx: number; tx: number }) => number): P =>
-    history.map((s, x) => [start + x * step, 38 - (pick(s) / top) * 34])
+    history.map((s) => [Math.max(0, 100 - ((end - s.at) / SPEED_WINDOW) * 100), 38 - (pick(s) / top) * 34])
   // Through every point, as a Catmull-Rom spline turned to cubic Béziers,
   // with each control point held within the band so the curve never dips
   // below zero or overshoots the peak between two samples.
@@ -82,7 +117,7 @@ function Wake({ ids }: { ids: number[] }) {
         <path d={curve(tx)} fill="none" stroke="var(--tx)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
       </svg>
       <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
-        <span>两分钟前</span>
+        <span>十分钟前</span>
         <span className="inline-flex items-center gap-3">
           <span className="inline-flex items-center gap-1"><span className="h-0.5 w-3 rounded-full bg-rx" />下行</span>
           <span className="inline-flex items-center gap-1"><span className="h-0.5 w-3 rounded-full bg-tx" />上行</span>
