@@ -84,7 +84,7 @@ export function daysUntil(date?: string | null): number | null {
  * U+221E rather than the emoji, which arrives as a coloured tile from whatever
  * font the visitor has; this inherits the text colour and size.
  */
-export const FOREVER = "∞"
+export const FOREVER = "不限"
 
 const MONEY = new Map<string, Intl.NumberFormat>()
 
@@ -364,7 +364,7 @@ export function snugRateAxis(low: number, high: number): { domain: [number, numb
   const times = top - 1 > bottom ? [2, 5].find((k) => below * k >= high * 1.1) : undefined
   if (times === undefined) return rateAxis(low, high)
   const ticks = rungTicks(bottom, top - 1)
-  return { domain: [rung(bottom), below * times], ticks: times === 5 ? [...ticks, below * 5] : ticks }
+  return { domain: [rung(bottom), below * times], ticks: times === 5 && !narrowScreen() ? [...ticks, below * 5] : ticks }
 }
 
 /**
@@ -400,6 +400,25 @@ export function despike(values: (number | null)[], window = 7, sigmas = 3): (num
     return Math.abs(v - mid) > sigmas * 1.4826 * mad ? mid : v
   })
 }
+
+/**
+ * A rolling mean over `window` points: the trend through a series that swings
+ * from sample to sample, which a filter for single spikes leaves untouched. A
+ * mean rather than a median: a route flapping between two levels has a median
+ * that jumps from one to the other, drawn as a square wave.
+ */
+export function rollingMean(values: (number | null)[], window: number): (number | null)[] {
+  const half = window >> 1
+  return values.map((v, i) => {
+    if (v === null) return v
+    const near = values.slice(Math.max(0, i - half), i + half + 1).filter((n) => n !== null)
+    return near.length ? near.reduce((a, b) => a + b, 0) / near.length : v
+  })
+}
+
+// A phone's chart is short enough that the extra tick five times a rung sits on
+// the rung beneath it. Read at call time; the node tests run without a window.
+const narrowScreen = () => typeof matchMedia === "function" && matchMedia("(max-width: 639px)").matches
 
 /** The middle of a sorted copy, the mean of the middle pair for an even count. */
 function median(values: number[]): number {

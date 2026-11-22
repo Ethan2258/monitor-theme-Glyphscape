@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Flag, hasFlag } from "@/components/Flag"
 import { Meter } from "@/components/Meter"
+import { TRAFFIC_WARN } from "@/lib/filter"
 import type { Node } from "@/lib/api"
 import { convert, remaining, type Rates } from "@/lib/cost"
 import { bytes, cycle, daysUntil, FOREVER, money, osName, pair, percent, rate, sinceSeen, uptime } from "@/lib/format"
@@ -76,21 +77,20 @@ type Tone = "online" | "offline" | "fresh"
  * badge shows it in whole days, so most pushes leave these unchanged and the
  * badge as it was.
  */
-function statusOf(node: Node): { label: string; full: string | undefined; tone: Tone } {
+function statusOf(node: Node): { word: string; label: string; full: string | undefined; tone: Tone } {
   const down = sinceSeen(node)
-  // Whole days once there are any: on a badge, "11 天" reads at a glance where
-  // "11 天 3 小时" is a sentence. The full figure is on hover.
-  const short = (seconds: number) => (seconds >= 86400 ? `${Math.floor(seconds / 86400)} 天` : uptime(seconds))
-  const label = node.online
-    ? `在线 ${node.metrics ? short(node.metrics.uptime) : ""}`
-    : deployed(node)
-      ? `离线 ${down >= 60 ? short(down) : ""}`
-      : "未接入"
-  const full = node.online ? (node.metrics ? `已运行 ${uptime(node.metrics.uptime)}` : "已连上，等待上报") : deployed(node) && down >= 60 ? `离线 ${uptime(down)}` : undefined
-  return { label: label.trim(), full, tone: node.online ? "online" : deployed(node) ? "offline" : "fresh" }
+  // Whole days once there are any, whole hours under a day: on a badge, "11 天"
+  // or "12 小时" reads at a glance where "12 小时 52 分" is a sentence that
+  // crowds the node's name. The full figure is on hover.
+  const short = (seconds: number) =>
+    seconds >= 86400 ? `${Math.floor(seconds / 86400)} 天` : seconds >= 3600 ? `${Math.floor(seconds / 3600)} 小时` : uptime(seconds)
+  const word = node.online ? "在线" : deployed(node) ? "离线" : "未接入"
+  const label = node.online ? (node.metrics ? short(node.metrics.uptime) : "") : deployed(node) && down >= 60 ? short(down) : ""
+  const full = node.online ? (node.metrics ? `已运行 ${uptime(node.metrics.uptime)}` : "已连上，等待上报") : deployed(node) && down >= 60 ? `离线 ${uptime(down)}` : word
+  return { word, label, full, tone: node.online ? "online" : deployed(node) ? "offline" : "fresh" }
 }
 
-const StatusBadge = memo(function StatusBadge({ label, full, tone }: { label: string; full: string | undefined; tone: Tone }) {
+const StatusBadge = memo(function StatusBadge({ word, label, full, tone }: { word: string; label: string; full: string | undefined; tone: Tone }) {
   return (
     // Muted once it stops reporting: the figures on the page are genuine, merely
     // no longer current.
@@ -104,7 +104,11 @@ const StatusBadge = memo(function StatusBadge({ label, full, tone }: { label: st
           tone === "online" ? "bg-online" : tone === "offline" ? "bg-offline" : "bg-muted-foreground/40",
         )}
       />
-      {label}
+      {/* In a card narrower than 22 rem -- every column of a grid -- the dot
+          says online or offline and the word gives its room to the node's
+          name. A wider card, and the node page, keep it. */}
+      <span className={cn(label && "@max-[22rem]:sr-only")}>{word}</span>
+      {label && <span>{label}</span>}
     </Badge>
   )
 })
@@ -153,7 +157,7 @@ const OsIcon = memo(function OsIcon({ os }: { os: string }) {
 function trafficFoot(node: Node) {
   return node.traffic_limit > 0
     ? pair(monthUsage(node), node.traffic_limit)
-    : `${bytes(monthUsage(node))} / ${FOREVER}`
+    : `${bytes(monthUsage(node))} · ${FOREVER}`
 }
 
 // No date means nothing expires: a permanent host, or one with no renewal set. A
@@ -257,7 +261,7 @@ const CardHead = memo(function CardHead({ node, name, os, virt, arch, days, stat
   )
 }, (a, b) =>
   a.node.country === b.node.country && a.name === b.name && a.os === b.os && a.virt === b.virt && a.arch === b.arch &&
-  a.days === b.days && a.status.label === b.status.label && a.status.full === b.status.full && a.status.tone === b.status.tone)
+  a.days === b.days && a.status.word === b.status.word && a.status.label === b.status.label && a.status.full === b.status.full && a.status.tone === b.status.tone)
 
 /**
  * One node, as a card. Memoised: the list hands it the node object the last
@@ -300,7 +304,7 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
       // Focus is a ring rather than the 1px outline every element gets, which
       // was lost against the card's own border.
       className={cn(
-        "min-w-0 cursor-pointer gap-0 p-4 transition-colors outline-none hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "@container min-w-0 cursor-pointer gap-0 p-4 transition-colors outline-none hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
         "[content-visibility:auto] [contain-intrinsic-block-size:auto_330px]",
         // Gone quiet: a red edge and a faint red wash, so it is found at a glance
         // in a grid of live ones.
@@ -353,7 +357,7 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
             <Meter
               label={`CPU ${node.cpu_cores} 核`}
               pct={m ? m.cpu : null}
-              foot={m ? m.load.map((n) => n.toFixed(2)).join(" ") : "—"}
+              foot={m ? `负载 ${m.load.map((n) => n.toFixed(2)).join(" ")}` : "—"}
             />
             <Meter
               label="内存"
@@ -369,6 +373,7 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
               label="流量"
               pct={node.traffic_limit > 0 ? percent(monthUsage(node), node.traffic_limit) : null}
               empty={FOREVER}
+              warn={TRAFFIC_WARN}
               foot={trafficFoot(node)}
             />
           </div>
@@ -384,11 +389,11 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
             </span>
             <span className="tnum inline-flex items-center gap-1.5 text-muted-foreground">
               <InIcon className="size-3" />
-              {bytes(node.total_rx)}
+              累计 {bytes(node.total_rx)}
             </span>
             <span className="tnum inline-flex items-center gap-1.5 text-muted-foreground">
               <OutIcon className="size-3" />
-              {bytes(node.total_tx)}
+              累计 {bytes(node.total_tx)}
             </span>
           </div>
           </div>
@@ -425,8 +430,8 @@ export function NodeHead({ node, onBack }: { node: Node; onBack: () => void }) {
     // the name and open water for the pond: switching scene then moves nothing
     // below it, where a padding eased between two values laid the page out
     // again on every frame of the switch.
-    <section data-pond-avoid="" data-pond-dim="box" data-sky-dim="" className="relative mx-auto w-full max-w-[1320px] px-4 pt-2 pb-24 sm:px-6 lg:pt-4 lg:pb-28">
-      <button onClick={onBack} className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+    <section data-pond-avoid="" data-pond-dim="box" data-sky-dim="" className="relative mx-auto w-full max-w-[1320px] px-4 pt-2 pb-8 sm:px-6 sm:pb-10 lg:pt-4 lg:pb-12 [.tall-scene_&]:sm:pb-16 [.tall-scene_&]:lg:pb-20">
+      <button type="button" onClick={onBack} className="mb-3 inline-flex min-h-10 items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground sm:mb-5 sm:min-h-0">
         <BackIcon className="size-4" /> 全部节点
       </button>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">

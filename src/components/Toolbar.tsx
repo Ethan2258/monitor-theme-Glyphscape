@@ -4,7 +4,7 @@ import { SORTS, type SortKey } from "@/lib/filter"
 
 // One look for both controls, at the height of the group tabs beside them.
 const FIELD =
-  "h-[34px] rounded-lg border bg-card text-base outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-xs"
+  "h-10 rounded-lg border bg-card text-base sm:h-[34px] outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-xs"
 
 /**
  * Search and order, at the end of the row the group tabs are on. Deliberately
@@ -56,7 +56,7 @@ export function Toolbar({ query, sort, view, onQuery, onSort, onView }: {
       </label>
       {/* Cards or a table. The table needs a laptop's width to be worth it, so a
           phone is not offered it. */}
-      <div role="group" aria-label="显示方式" className="hidden h-[34px] items-center gap-0.5 rounded-lg bg-secondary/70 p-0.5 lg:flex">
+      <div role="group" aria-label="显示方式" className="hidden h-[34px] items-center gap-0.5 rounded-lg bg-secondary/70 p-0.5 xl:flex">
         {([["cards", "卡片", GridIcon], ["table", "列表", RowsIcon]] as const).map(([value, label, Icon]) => (
           <button
             key={value}

@@ -66,7 +66,7 @@ const cpuText = (r: Record<string, unknown>) => {
   const cpu = num(r.cpu)
   if (cpu === undefined) return "无数据"
   const top = num(r.cpu_max)
-  return `均值 ${pct(cpu.toFixed(1))}${top === undefined ? "" : ` · 峰值 ${pct(top.toFixed(1))}`}`
+  return `CPU ${pct(cpu.toFixed(1))}${top === undefined ? "" : ` · 峰值 ${pct(top.toFixed(1))}`}`
 }
 const memText = (r: Record<string, unknown>) => {
   const used = num(r.mem_used)
@@ -81,7 +81,7 @@ const memTextNoSwap = (r: Record<string, unknown>) => {
 const netText = (r: Record<string, unknown>) => {
   const rx = num(r.net_rx)
   const tx = num(r.net_tx)
-  return rx === undefined || tx === undefined ? "无数据" : `均值 ↓ ${rate(rx)} ↑ ${rate(tx)}`
+  return rx === undefined || tx === undefined ? "无数据" : `网络 ↓ ${rate(rx)} ↑ ${rate(tx)}`
 }
 const diskText = (r: Record<string, unknown>) => {
   const used = num(r.disk_used)

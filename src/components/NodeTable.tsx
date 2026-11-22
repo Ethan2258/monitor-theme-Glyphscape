@@ -128,7 +128,7 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
           <Bar pct={percent(used, n.traffic_limit)} foot={`${bytes(used)} / ${bytes(n.traffic_limit)}`} />
         ) : (
           <div className="tnum text-xs">
-            {bytes(used)} <span className="text-muted-foreground">/ {FOREVER}</span>
+            {bytes(used)} <span className="text-muted-foreground">· {FOREVER}</span>
           </div>
         )}
       </div>

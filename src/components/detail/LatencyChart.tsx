@@ -27,7 +27,8 @@ const latencyTip: TipFormatter = (v, name, item) => {
   const row = item?.payload as Record<string, unknown> | undefined
   if (v === null || v === undefined) return [row && row[`t${id}`] === null ? "超时" : "—", name]
   const loss = Number(row?.[`l${id}`] ?? 0)
-  return [`${Math.round(Number(v))} ms${loss > 0 ? ` · 丢 ${pct(loss)}` : ""}`, name]
+  const ms = Number(v)
+  return [`${ms < 1 ? "<1" : Math.round(ms)} ms${loss > 0 ? ` · 丢 ${pct(loss)}` : ""}`, name]
 }
 
 // With a space, as every other figure on the page prints its unit.
@@ -227,6 +228,9 @@ export const LatencyChart = memo(function LatencyChart({
                   connectNulls
                 />
               ))}
+            {/* Dense, each series is drawn twice: its samples faint, and their
+                trend over them, so a probe swinging from one bucket to the next
+                reads as a level rather than a wall. The tooltip reads the samples. */}
             {probes.map((s) => (
               <Line
                 key={s.id}
@@ -235,9 +239,26 @@ export const LatencyChart = memo(function LatencyChart({
                 stroke={style(s.id).stroke}
                 strokeDasharray={dense ? undefined : style(s.id).dash}
                 {...SERIES}
+                strokeOpacity={dense ? 0.3 : 1}
+                strokeWidth={dense ? 1 : SERIES.strokeWidth}
                 connectNulls
               />
             ))}
+            {dense &&
+              probes.map((s) => (
+                <Line
+                  key={`m${s.id}`}
+                  dataKey={`m${s.id}`}
+                  stroke={style(s.id).stroke}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={false}
+                  isAnimationActive={false}
+                  tooltipType="none"
+                  legendType="none"
+                  connectNulls
+                />
+              ))}
           </ComposedChart>
         </ResponsiveContainer>
       </div>

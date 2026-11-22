@@ -315,6 +315,14 @@
   .scene-still-realm { display: none; }
 }
 
+/* Text over a scene -- the overview, a node's name -- carries a halo of the
+   page's own colour: where a koi or a ghost drifts behind a figure, the figure
+   stays clean. On bare paper the halo is the paper and shows as nothing. */
+.scene-band [data-pond-dim],
+.scene-band [data-sky-dim] {
+  text-shadow: 0 0 2px var(--background), 0 0 6px var(--background), 0 0 12px var(--background);
+}
+
 /* The palette change (lib/palette.ts): every colour token is registered as a
    colour, so while `.palette-fade` is on the root they blend from the old
    palette to the new in one ease-in-out sine, the background scene blending in

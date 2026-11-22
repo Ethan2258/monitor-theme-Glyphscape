@@ -8,8 +8,9 @@ import type { Rates } from "@/lib/cost"
 import { NO_FILTERS, STATUSES, type Filters, type Status } from "@/lib/filter"
 import { cn } from "@/lib/utils"
 
-// The table needs a laptop's width; below it the table view falls back to cards.
-const WIDE = matchMedia("(min-width: 1024px)")
+// The table is 68 rem wide; below 1280 px it was cut off at its right edge, so
+// there the table view falls back to cards.
+const WIDE = matchMedia("(min-width: 1280px)")
 
 /**
  * Whether the window is wide enough for the table. Read in script rather than

@@ -18,6 +18,7 @@ import { applyPalette, applyScene, transitionPalette } from "@/lib/palette"
 import { preloadPond } from "@/lib/pond"
 import { preloadRealm } from "@/lib/realm"
 import { useRates } from "@/lib/rates"
+import { cn } from "@/lib/utils"
 
 const WRAITH_ICON =
   'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="%23101114"/><path d="M7.5 14.5a8.5 8.5 0 0 1 17 0V27l-2.83-2.1-2.84 2.1-2.83-2.1-2.83 2.1-2.84-2.1L7.5 27Z" fill="%23e9ebf0"/><ellipse cx="12.8" cy="14" rx="1.9" ry="2.7" fill="%23101114"/><ellipse cx="19.2" cy="14" rx="1.9" ry="2.7" fill="%23101114"/><ellipse cx="16" cy="19.6" rx="1.3" ry="2" fill="%23101114"/></svg>'
@@ -238,6 +239,26 @@ export default function App() {
     setPickedScene(choice)
   }
   const activeScene: SceneChoice = config?.pond === false || !shown ? "off" : scene
+  // The graveyard needs more room under the head of the page than the water
+  // does (`tall-scene`). Changing scene, the list and footer would jump by the
+  // difference; instead they are drawn at their old place and slide to the new
+  // over the palette's blend -- a transform, so no frame lays the page out.
+  const listRef = useRef<HTMLElement>(null)
+  const footRef = useRef<HTMLElement>(null)
+  const listTop = useRef<{ scene: SceneChoice; top: number } | null>(null)
+  useLayoutEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    const top = list.getBoundingClientRect().top + scrollY
+    const was = listTop.current
+    listTop.current = { scene: activeScene, top }
+    if (!was || was.scene === activeScene || Math.abs(was.top - top) < 1) return
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return
+    const from = `translateY(${was.top - top}px)`
+    for (const el of [list, footRef.current]) {
+      el?.animate([{ transform: from }, { transform: "none" }], { duration: 560, easing: "cubic-bezier(0.37, 0, 0.63, 1)" })
+    }
+  })
   // The first time at once (public/boot.js has painted it already); after that,
   // blended, as a change of light and dark is.
   const sceneSeen = useRef(false)
@@ -368,7 +389,7 @@ export default function App() {
       {/* The head of the page, with its scene behind it: the header, then the
           overview or a node's name. `scene-band` marks it for index.css, which
           lets this one element keep its transition during a palette blend. */}
-      <div ref={headRef} className="scene-band relative isolate">
+      <div ref={headRef} className={cn("scene-band relative isolate", activeScene === "wraith" && "tall-scene")}>
         <SceneStage hostRef={headRef} scene={activeScene} feed={config.pond_feed} fish={config.pond_fish} />
         <header className="relative z-20 mx-auto flex w-full max-w-[1320px] items-center gap-1 px-4 py-4 sm:px-6">
           {/* The site name is the way back to the list. The icon follows the
@@ -389,7 +410,7 @@ export default function App() {
               onClick={openAdmin}
               onPointerEnter={preloadAdmin}
               onFocus={preloadAdmin}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm whitespace-nowrap text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              className="inline-flex h-10 items-center gap-1.5 rounded-full px-3 text-sm whitespace-nowrap sm:h-8 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               <DoorIcon className="size-4" />
               {me.authed ? "后台" : "登录"}
@@ -431,7 +452,7 @@ export default function App() {
       </div>
 
       {/* `nodes`: where the skip link lands; focusable by script only. */}
-      <main id="nodes" tabIndex={-1} className="mx-auto w-full max-w-[1320px] flex-1 scroll-mt-4 space-y-5 px-4 pb-10 outline-none sm:px-6">
+      <main ref={listRef} id="nodes" tabIndex={-1} className="mx-auto w-full max-w-[1320px] flex-1 scroll-mt-4 space-y-5 px-4 pb-10 outline-none sm:px-6">
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {open !== null ? (
@@ -482,7 +503,7 @@ export default function App() {
         )}
       </main>
 
-      <footer className="mx-auto w-full max-w-[1320px] px-4 pt-4 pb-10 text-center text-xs text-muted-foreground sm:px-6">
+      <footer ref={footRef} className="mx-auto w-full max-w-[1320px] px-4 pt-4 pb-10 text-center text-xs text-muted-foreground sm:px-6">
         {settings.footer.trim() && <p className="mb-1 break-words">{settings.footer.trim()}</p>}
         <p>
           <a className="hover:text-foreground" href="https://github.com/monitor-probe/monitor" target="_blank" rel="noreferrer">Monitor</a>

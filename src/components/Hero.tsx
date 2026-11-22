@@ -114,13 +114,13 @@ function Wake({ ids }: { ids: number[] }) {
         <path d={area(rx)} fill="url(#wake-rx)" />
         <path d={area(tx)} fill="url(#wake-tx)" />
         <path d={curve(rx)} fill="none" stroke="var(--rx)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-        <path d={curve(tx)} fill="none" stroke="var(--tx)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+        <path d={curve(tx)} fill="none" stroke="var(--tx)" strokeWidth={1.5} strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
       </svg>
       <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
         <span>十分钟前</span>
         <span className="inline-flex items-center gap-3">
           <span className="inline-flex items-center gap-1"><span className="h-0.5 w-3 rounded-full bg-rx" />下行</span>
-          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-3 rounded-full bg-tx" />上行</span>
+          <span className="inline-flex items-center gap-1"><span className="h-0 w-3 border-t-[1.5px] border-dashed border-tx" />上行</span>
           <span>现在</span>
         </span>
       </div>
@@ -242,7 +242,7 @@ function Overview({ nodes, cost, rates, primary, onOpen }: {
 
       {/* Tighter on a phone, where the overview, the globe and the chips all
           come before the first card. */}
-      <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 border-t pt-5 sm:mt-6 sm:flex sm:flex-wrap sm:gap-y-6 sm:pt-6">
+      <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 border-t pt-5 sm:mt-6 sm:flex sm:flex-wrap sm:gap-y-6 sm:pt-6 lg:max-xl:grid lg:max-xl:grid-cols-2 lg:max-xl:gap-x-8 [&>*]:lg:max-xl:col-span-1 [&>*]:lg:max-xl:border-l-0 [&>*]:lg:max-xl:pl-0">
         <Stat wide label="今日流量" foot={`累计 ↓${bytes(add((n) => n.total_rx))} ↑${bytes(add((n) => n.total_tx))}`}>
           <span className="tnum whitespace-nowrap">↓ {bytes(add((n) => n.day_rx))}</span>
           <span className="tnum ml-3 whitespace-nowrap text-muted-foreground">↑ {bytes(add((n) => n.day_tx))}</span>
@@ -328,7 +328,7 @@ export function Hero({ nodes, scope, region, onRegion, onOpen, summary, globe, c
         // standing on the first gravestone. Less on a phone, whose graveyard
         // is a third the height and where every pixel puts the first card
         // further down.
-        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-16 gap-y-6 px-4 pt-4 pb-20 sm:gap-y-10 sm:px-6 sm:pb-28 lg:pt-6 lg:pb-36",
+        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-16 gap-y-6 px-4 pt-4 pb-8 sm:gap-y-10 sm:px-6 sm:pb-12 lg:pt-6 lg:pb-14 [.tall-scene_&]:sm:pb-20 [.tall-scene_&]:lg:pb-36 [.tall-scene_&]:xl:pb-28",
         summary && showGlobe && "lg:grid-cols-[minmax(0,1fr)_auto]",
       )}
     >

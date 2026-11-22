@@ -10,7 +10,7 @@ import {
 import { api, type Node } from "@/lib/api"
 import { convert, remaining, type Rates } from "@/lib/cost"
 import {
-  axisTop, bytes, cycle, despike, quarters, cpuName, FOREVER, money, osName, pair,
+  axisTop, bytes, cycle, despike, quarters, rollingMean, cpuName, FOREVER, money, osName, pair,
   RATE_FLOOR, sinceSeen, snugRateAxis, windows, withGaps,
 } from "@/lib/format"
 
@@ -127,6 +127,22 @@ function Fact({ label, value }: { label: string; value?: React.ReactNode }) {
       <dd className="tnum min-w-0 text-right text-[13px] break-words">{value}</dd>
     </div>
   )
+}
+
+/**
+ * A fact's parts joined by " · ", each kept whole: a narrow column breaks
+ * between them, never inside one -- not "TCP 15 · UDP" over "4", nor a kernel
+ * name split at its hyphen. Null when every part is empty.
+ */
+function parts(...items: (string | undefined | null)[]): React.ReactNode {
+  const kept = items.filter((s): s is string => !!s)
+  if (!kept.length) return null
+  return kept.map((s, i) => (
+    <span key={i}>
+      {i > 0 && " · "}
+      <span className="whitespace-nowrap">{s}</span>
+    </span>
+  ))
 }
 
 /** A column of facts under a small heading. */
@@ -579,6 +595,10 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
     for (const s of pingSeries) {
       const windowSize = despikeWindow(s.points)
       const smoothed = despike(s.points.map((p) => p.latency), windowSize)
+      // The trend: a mean of the despiked samples over about a thirtieth of the
+      // window, so a series swinging 35-57 ms from one bucket to the next still
+      // reads as a level.
+      const trend = rollingMean(smoothed, Math.max(5, Math.round(s.points.length / 30)) | 1)
       // The band spans the same outliers as the line, and with one probe on
       // screen it is what the axis is fitted to, so it is clipped alongside it
       // rather than left to pull the axis back open. The latency fills the
@@ -589,6 +609,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
         const row: PingRow = rows.get(p.ts) ?? { ts: p.ts * 1_000 }
         row[`t${s.id}`] = p.latency
         row[`s${s.id}`] = smoothed[i]
+        row[`m${s.id}`] = trend[i]
         row[`l${s.id}`] = p.loss ?? 0
         // A bucket with a single answer carries no band and spans only that
         // answer. Left null, `connectNulls` would bridge the hours between the
@@ -649,7 +670,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
         : [{ text: "免费" }]
       : []),
     !node.expires_at
-      ? { text: FOREVER }
+      ? { text: "长期" }
       : expired
         ? { text: `${node.expires_at} 已过期 ${-days} 天`, tone: "text-warn" }
         : { text: `${node.expires_at} 到期` },
@@ -666,7 +687,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
           machine's. */}
       <div className="grid gap-x-10 gap-y-6 md:grid-cols-2">
       <Facts title="机器">
-        <Fact label="系统" value={[osName(node.os), node.kernel].filter(Boolean).join(" · ")} />
+        <Fact label="系统" value={parts(osName(node.os), node.kernel)} />
         <Fact
           label="CPU"
           value={node.cpu_name ? `${cpuName(node.cpu_name)} × ${node.cpu_cores}` : `${node.cpu_cores} 核`}
@@ -674,23 +695,18 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
         <Fact label="内存 / 硬盘" value={`${bytes(node.mem_total)} / ${bytes(node.disk_total)}`} />
         <Fact
           label="架构"
-          value={[node.arch, node.virt !== "none" ? node.virt : "", m ? `${m.procs} 进程` : ""]
-            .filter(Boolean)
-            .join(" · ")}
+          value={parts(node.arch, node.virt !== "none" ? node.virt : "", m ? `${m.procs} 进程` : "")}
         />
         <Fact label="负载" value={m ? m.load.map((n) => n.toFixed(2)).join(" · ") : null} />
         <Fact
           label="Swap / 连接"
           value={
             m
-              ? [
-                  node.swap_total > 0 ? pair(m.swap_used, node.swap_total) : "",
-                  `TCP ${m.tcp} · UDP ${m.udp}`,
-                ].filter(Boolean).join(" · ")
+              ? parts(node.swap_total > 0 ? pair(m.swap_used, node.swap_total) : "", `TCP ${m.tcp}`, `UDP ${m.udp}`)
               : null
           }
         />
-        <Fact label="主机名 / 地址" value={[node.hostname, node.ip].filter(Boolean).join(" · ")} />
+        <Fact label="主机名 / 地址" value={parts(node.hostname, node.ip)} />
       </Facts>
       <div className="min-w-0 space-y-6">
       <Facts title="流量">
@@ -698,7 +714,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
         <Fact
           label="本期流量"
           value={[
-            node.traffic_limit > 0 ? pair(used, node.traffic_limit) : `${bytes(used)} / ${FOREVER}`,
+            node.traffic_limit > 0 ? pair(used, node.traffic_limit) : `${bytes(used)} · ${FOREVER}`,
             node.traffic_limit > 0 ? (TRAFFIC_MODES[node.traffic_mode] ?? "") : "",
           ].filter(Boolean).join(" · ")}
         />
@@ -785,16 +801,16 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {/* Wraps on a screen narrower than the seven windows of a year. The
-              padding tightens on a phone, so they fit one row of 360 px. */}
-          <div role="group" aria-label="时间范围" className="flex flex-wrap gap-1">
+          {/* Seven equal columns on a phone, so 1 年 does not drop to a row of
+              its own; spaced pills above it. */}
+          <div role="group" aria-label="时间范围" className="grid w-full grid-cols-7 gap-0.5 sm:flex sm:w-auto sm:flex-wrap sm:gap-1">
             {ranges.map((r) => (
               <button
                 key={r.hours}
                 type="button"
                 aria-pressed={hours === r.hours}
                 onClick={() => setPicked((all) => ({ ...all, [tab]: r.hours }))}
-                className={`inline-flex min-h-9 items-center rounded-full px-2 text-xs transition-colors sm:min-h-6 sm:px-2.5 ${RING} ${
+                className={`inline-flex min-h-9 items-center justify-center rounded-full px-0 text-xs whitespace-nowrap transition-colors sm:min-h-6 sm:px-2.5 ${RING} ${
                   hours === r.hours
                     ? "bg-muted text-foreground ring-1 ring-border"
                     : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -963,4 +979,4 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
 }
 
 /** How a plan counts traffic against its quota. */
-const TRAFFIC_MODES: Record<string, string> = { sum: "双向", up: "仅上行", down: "仅下行", max: "取大" }
+const TRAFFIC_MODES: Record<string, string> = { sum: "双向", up: "仅上行", down: "仅下行", max: "上下行取大" }

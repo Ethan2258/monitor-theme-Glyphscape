@@ -101,7 +101,7 @@ export const STATUSES = [
 export type Status = (typeof STATUSES)[number][0]
 
 /** Past this share of its quota, a plan's traffic is a warning. */
-const TRAFFIC_WARN = 80
+export const TRAFFIC_WARN = 80
 /** Within this many days of its expiry, or past it, a node is expiring. */
 const EXPIRY_WARN = 7
 
