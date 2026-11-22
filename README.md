@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/github/license/Ethan2258/monitor-theme-Glyphscape?style=flat-square&color=5f8a52)](LICENSE)
 [![Monitor](https://img.shields.io/badge/Monitor-%E6%8E%A2%E9%92%88%E4%B8%BB%E9%A2%98-2f5a92?style=flat-square)](https://github.com/monitor-probe/monitor)
 
-[Monitor](https://github.com/monitor-probe/monitor) 探针公开状态页主题：保留默认主题的清晰版式，页首嵌一片可随时切换的字符场景（**锦鲤池塘** / **幽灵鬼域**），随场景联动配色与图标，配有可交互点阵地球仪、双币种成本折算与详情页监控图表。
+[Monitor](https://github.com/monitor-probe/monitor) 探针公开状态页主题：保留默认主题的清晰版式，页首嵌一片可随时切换的字符场景（**锦鲤池塘** / **幽灵鬼域**），随场景联动配色与图标，配有可交互点阵地球仪、卡片三网延迟色块、双币种成本折算与详情页监控图表。
 
 > 原名「墨池 · Inkpond」，主题标识 `inkpond` 保持不变。已安装旧版的站点直接在面板点击更新即可，原有设置不受影响。
 
@@ -34,6 +34,10 @@
 | ![锦鲤池塘场景](screenshots/scene-pond.png) | ![幽灵鬼域浅色场景](screenshots/scene-wraith.png) |
 | **幽灵鬼域（深色）** | **节点详情页** |
 | ![幽灵鬼域深色场景](screenshots/scene-wraith-dark.png) | ![节点详情页](screenshots/node-detail.png) |
+
+**卡片三网延迟**
+
+![卡片三网延迟](screenshots/latency.png)
 
 ## 安装与更新
 
