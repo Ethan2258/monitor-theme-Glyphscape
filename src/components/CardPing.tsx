@@ -75,6 +75,8 @@ export type ProbeLine = {
   loss: number
   /** One block per slot: its median, null for a timeout, undefined for no data. */
   slots: (number | null | undefined)[]
+  /** Window start timestamp in unix seconds, for per-slot tooltips. */
+  start: number
   typical: number | null
 }
 
@@ -103,11 +105,12 @@ export function probeLines(data: PingData | null | undefined, wanted: string, ho
   if (!data?.probes || !data.ping) return []
   const end = Date.now() / 1000
   const span = hours * 3600
+  const start = end - span
   return pickProbes(data.probes, wanted).map(([id, name]) => {
     const rows = data.ping!.filter((p) => p.task_id === id).sort((a, b) => a.ts - b.ts)
     const buckets: (number | null)[][] = Array.from({ length: SLOTS }, () => [])
     for (const r of rows) {
-      const i = Math.floor(((r.ts - (end - span)) / span) * SLOTS)
+      const i = Math.floor(((r.ts - start) / span) * SLOTS)
       if (i >= 0 && i < SLOTS) buckets[i].push(r.latency)
     }
     const slots = buckets.map((b) => {
@@ -123,52 +126,74 @@ export function probeLines(data: PingData | null | undefined, wanted: string, ho
       latest: last ? last.latency : undefined,
       loss: data.loss?.[id] ?? 0,
       slots,
+      start,
       typical: median(answered),
     }
   })
 }
 
-/**
- * A block's shade: ink, deeper the further above the line's usual latency it
- * sits; the warning colour past half again; red for a timeout; the track's own
- * grey for no data. One accent at most, as everywhere on the page.
- *
- * Slower counts only by a margin a person would feel as well as by share: on a
- * 1 ms line, 2 ms is twice the usual and still nothing, and drawn by share alone
- * such lines were striped amber end to end.
- */
+// Absolute round-trip tiers matching the card's semantic palette: green (<100 ms),
+// amber (100–250 ms), and red (>=250 ms or timeout). Sharp spikes above a fast
+// line's own median step up one tier so jitter on domestic links stays visible.
+const MID_MS = 100
+const SLOW_MS = 250
+
 function shade(v: number | null | undefined, typical: number | null): string {
-  if (v === undefined) return "bg-muted"
-  if (v === null) return "bg-hot/70"
-  if (!typical) return "bg-foreground/22"
-  const over = v - typical
-  const r = v / typical
-  if (r >= 1.5 && over >= 30) return "bg-warn"
-  if (r >= 1.25 && over >= 12) return "bg-foreground/60"
-  if (r >= 1.1 && over >= 5) return "bg-foreground/40"
-  return "bg-foreground/22"
+  if (v === undefined) return "bg-foreground/10"
+  if (v === null) return "bg-hot"
+  if (v >= SLOW_MS) return "bg-hot/75"
+  if (v >= MID_MS) {
+    if (typical && v / typical >= 1.5 && v - typical >= 50) return "bg-hot/75"
+    return "bg-warn/85"
+  }
+  if (typical && v / typical >= 1.8 && v - typical >= 30) return "bg-warn/85"
+  return "bg-online/85"
+}
+
+function latencyTone(v: number | null | undefined): string {
+  if (v === undefined) return "text-muted-foreground"
+  if (v === null || v >= SLOW_MS) return "text-hot"
+  if (v >= MID_MS) return "text-warn"
+  return "[color:color-mix(in_srgb,var(--online)_80%,var(--foreground))]"
+}
+
+function lossTone(loss: number): string {
+  if (loss >= 10) return "text-hot"
+  if (loss >= 3) return "text-warn"
+  return "text-muted-foreground"
 }
 
 const ms = (v: number | null | undefined) => (v === undefined ? "—" : v === null ? "超时" : v < 1 ? "<1 ms" : `${Math.round(v)} ms`)
 
+function hhmm(sec: number): string {
+  const d = new Date(sec * 1000)
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+}
+
 /** A probe's row: name, strip, latest, loss. */
 function ProbeRow({ line, hours }: { line: ProbeLine; hours: number }) {
+  const step = (hours * 3600) / SLOTS
+  const summary = `最近 ${hours} 小时 · 常态 ${line.typical === null ? "—" : ms(line.typical)}${line.loss > 0 ? ` · 丢包 ${line.loss.toFixed(1)} %` : ""}（绿 <${MID_MS} ms · 黄 ${MID_MS}–${SLOW_MS} ms · 红 ≥${SLOW_MS} ms / 超时）`
   return (
-    <div className="grid grid-cols-[4.25rem_minmax(0,1fr)_3.75rem] items-center gap-2 text-xs">
-      <span className="truncate text-muted-foreground" title={line.name}>{line.name}</span>
+    <div className="grid grid-cols-[4.25rem_minmax(0,1fr)_4.75rem] items-center gap-2 text-xs">
+      <span className="truncate text-muted-foreground" title={`${line.name} · ${summary}`}>{line.name}</span>
       <span
         className="flex h-2.5 min-w-0 gap-px"
         role="img"
-        aria-label={`${line.name} 最近 ${hours} 小时延迟，深色为较慢时段`}
-        title={`最近 ${hours} 小时 · 常态 ${line.typical === null ? "—" : ms(line.typical)}${line.loss > 0 ? ` · 丢包 ${line.loss.toFixed(1)} %` : ""}`}
+        aria-label={`${line.name} 最近 ${hours} 小时延迟，绿顺畅、黄偏高、红较慢或超时`}
+        title={summary}
       >
         {line.slots.map((v, i) => (
-          <span key={i} className={cn("h-full min-w-0 flex-1 rounded-[1px]", shade(v, line.typical))} />
+          <span
+            key={i}
+            className={cn("h-full min-w-0 flex-1 rounded-[1px]", shade(v, line.typical))}
+            title={`${hhmm(line.start + i * step)} · ${v === undefined ? "无数据" : ms(v)}`}
+          />
         ))}
       </span>
-      <span className={cn("tnum text-right whitespace-nowrap", line.latest === null && "text-hot", line.latest === undefined && "text-muted-foreground")}>
+      <span className={cn("tnum text-right whitespace-nowrap", latencyTone(line.latest))} title={summary}>
         {ms(line.latest)}
-        {line.loss >= 1 && <span className="ml-1 text-[10px] text-muted-foreground">{Math.round(line.loss)}%</span>}
+        {line.loss >= 1 && <span className={cn("ml-1 text-[10px]", lossTone(line.loss))}>{Math.round(line.loss)}%</span>}
       </span>
     </div>
   )
@@ -199,7 +224,7 @@ export const CardPing = memo(function CardPing({ id }: { id: number }) {
       {lines.length
         ? lines.map((l) => <ProbeRow key={l.id} line={l} hours={hours} />)
         : [0, 1, 2].map((i) => (
-            <div key={i} className="grid grid-cols-[4.25rem_minmax(0,1fr)_3.75rem] items-center gap-2" aria-hidden>
+            <div key={i} className="grid grid-cols-[4.25rem_minmax(0,1fr)_4.75rem] items-center gap-2" aria-hidden>
               <span className="h-2.5 rounded bg-muted" />
               <span className="h-2.5 rounded bg-muted/60" />
               <span className="h-2.5 rounded bg-muted" />
@@ -231,7 +256,7 @@ export const PingCell = memo(function PingCell({ id }: { id: number }) {
         <>
           <div className="truncate">
             {lines.map((l, i) => (
-              <span key={l.id} className={cn(l.latest === null && "text-hot", l.latest === undefined && "text-muted-foreground")}>
+              <span key={l.id} className={latencyTone(l.latest)}>
                 {i > 0 && <span className="text-muted-foreground"> · </span>}
                 {l.latest === undefined ? "—" : l.latest === null ? "超时" : l.latest < 1 ? "<1" : Math.round(l.latest)}
               </span>
@@ -258,7 +283,7 @@ export function PingSummary({ id }: { id: number }) {
       {lines.map((l, i) => (
         <span key={l.id}>
           {i > 0 && " · "}
-          <span className={cn("whitespace-nowrap", l.latest === null && "text-hot", l.latest === undefined && "text-muted-foreground")}>{`${l.name} ${ms(l.latest)}`}</span>
+          <span className={cn("whitespace-nowrap", latencyTone(l.latest))}>{`${l.name} ${ms(l.latest)}`}</span>
         </span>
       ))}
     </span>

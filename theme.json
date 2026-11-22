@@ -2,7 +2,7 @@
   "name": "字景 · Glyphscape",
   "short": "inkpond",
   "description": "Monitor 字符场景主题：锦鲤/幽灵双场景、点阵地球仪、三网延迟与双币折算。",
-  "version": "1.2.21",
+  "version": "1.2.22",
   "author": "Ethan2258",
   "url": "https://github.com/Ethan2258/monitor-theme-Glyphscape",
   "config": [
@@ -113,7 +113,7 @@
       "type": "boolean",
       "label": "显示三网延迟",
       "default": true,
-      "help": "节点卡片底部和详情页显示各探测点的延迟：当前值、最近一段时间的色块（越深越慢，红色为超时）和丢包率。需要在 hub 里配置延迟探测"
+      "help": "节点卡片底部和详情页显示各探测点的延迟：当前值、最近一段时间的色块（绿 <100 ms、黄 100–250 ms、红 ≥250 ms 或超时）和丢包率。需要在 hub 里配置延迟探测"
     },
     {
       "key": "ping_probes",
