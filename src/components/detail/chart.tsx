@@ -1,5 +1,6 @@
-import { useSyncExternalStore, type ComponentProps, type ReactNode } from "react"
-import type { DotItemDotProps, Tooltip } from "recharts"
+import { createContext, useContext, useState, useSyncExternalStore, type ComponentProps, type ReactNode } from "react"
+import { createPortal } from "react-dom"
+import type { DotItemDotProps, Tooltip, TooltipContentProps } from "recharts"
 
 import { clockFor, tickClock, timeTicks } from "@/lib/format"
 
@@ -74,6 +75,10 @@ const tooltips = new Map<number, TooltipProps>()
  * own ground: recharts' default is a white box in either palette. Its label is
  * the axis's own clock -- the date only where the window spans days, and never
  * the seconds, which a bucket of a minute or more does not have.
+ *
+ * Pinned to the top of the plot rather than set beside the cursor at its
+ * height, where it sat on the very lines it described; the lines of a resource
+ * panel mostly run in its lower half, and the cursor still says which minute.
  */
 export function tooltipFor(hours: number): TooltipProps {
   let tip = tooltips.get(hours)
@@ -86,6 +91,7 @@ export function tooltipFor(hours: number): TooltipProps {
       // Held within the plot on both axes, and never wider than a phone's chart:
       // a tooltip overhanging the panel widened the page by 42 px after a tap.
       allowEscapeViewBox: { x: false, y: false },
+      position: { y: CHART_MARGIN.top },
       wrapperStyle: { maxWidth: "100%", zIndex: 10 },
       contentStyle: {
         fontSize: 12,
@@ -144,8 +150,13 @@ function dayTicks(from: number, to: number, count: number): number[] {
  * and `tickFormatter` on each render redraw the whole chart.
  */
 export function timeAxis(from: number, to: number, hours: number, width: number) {
-  const count = Math.max(3, Math.min(8, Math.floor(width / 90)))
   const span = to - from
+  // A label every 72 px or so, about twice the width of "14:00" or "11/20",
+  // and on a phone's 260 px plot no fewer than four, five past a week: at
+  // three, a month fell on ten-day steps, the first too near the start to
+  // keep, and a week on a seven-day one -- two labels and one.
+  const least = span > 7 * DAY ? 5 : 4
+  const count = Math.max(least, Math.min(8, Math.floor(width / 72)))
   // Explicit, or recharts places them at 05:14 and 10:22. Any that still collide
   // are dropped by `minTickGap`.
   let ticks = span > 7 * DAY && span <= 120 * DAY ? dayTicks(from, to, count) : timeTicks(from, to, count)
@@ -153,7 +164,13 @@ export function timeAxis(from: number, to: number, hours: number, width: number)
   // A label is centred on its tick, so one near the end would overhang the
   // margin and be cut off; it is dropped instead. About 3.3 px a character at 11 px.
   const px = width / Math.max(1, span)
-  ticks = ticks.filter((t) => (to - t) * px + CHART_MARGIN.right >= format(t).length * 3.3)
+  // Likewise one near the start, whose left half would run under the value
+  // axis's lowest label: at 1024 px a 11:30 a few pixels into the plot sat on
+  // the "0 %" beside it.
+  ticks = ticks.filter((t) => {
+    const half = format(t).length * 3.3
+    return (to - t) * px + CHART_MARGIN.right >= half && (t - from) * px >= half
+  })
   return {
     dataKey: "ts",
     type: "number" as const,
@@ -163,7 +180,9 @@ export function timeAxis(from: number, to: number, hours: number, width: number)
     allowDataOverflow: true,
     ticks,
     tickFormatter: tickClock(ticks, hours),
-    minTickGap: hours > 24 ? 72 : 40,
+    // Small: the count above is already what fits, and a gap of 72 px for the
+    // longer dates left a phone's month with two labels of its three.
+    minTickGap: 12,
     ...AXIS,
   }
 }
@@ -235,7 +254,77 @@ export function useNarrow(): boolean {
   return useSyncExternalStore(subscribe, () => matchMedia(narrowQuery).matches, () => false)
 }
 
+/**
+ * A gridline step of 1, 2, 2.5 or 5 of a power of ten, and the ticks on it
+ * from at or below `lo` to above `hi`, about `count` of them. The top tick
+ * clears `hi` by at least a tenth of a step, so the highest line has a gridline
+ * and a label above it instead of running along the plot's top edge past the
+ * last label -- recharts' "auto" put a probe at 45-50 ms above a top tick of
+ * 40 ms.
+ */
+export function niceAxis(lo: number, hi: number, count = 5): { domain: [number, number]; ticks: number[] } {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return { domain: [0, 1], ticks: [0, 1] }
+  const raw = Math.max(hi - lo, Math.abs(hi) * 0.02, 1) / count
+  const scale = 10 ** Math.floor(Math.log10(raw))
+  const step = [1, 2, 2.5, 5, 10].find((m) => m * scale >= raw)! * scale
+  const bottom = Math.floor(lo / step) * step
+  const top = (Math.floor(hi / step + 0.1) + 1) * step
+  const ticks: number[] = []
+  for (let i = 0; bottom + i * step <= top + step / 2; i++) ticks.push(Number((bottom + i * step).toPrecision(12)))
+  return { domain: [bottom, top], ticks }
+}
+
 export type Key = { label: string; color: string; dash?: string }
+
+/** Where a panel's readout goes: over its own title row. */
+const ReadoutSlot = createContext<HTMLElement | null>(null)
+
+type ReadoutText = (row: Record<string, unknown>) => string
+const readouts = new Map<string, (props: TooltipContentProps) => ReactNode>()
+
+/**
+ * A tooltip `content` for a phone: one line of the touched minute's values,
+ * drawn over the panel's own title row rather than as a box over the plot. The
+ * box was 250-280 px of a 390 px screen and covered the lines it described.
+ * `text` reads the values off the row. Built once per `key` and window, so
+ * recharts is handed the same function on every render.
+ */
+export function readoutFor(key: string, hours: number, text: ReadoutText) {
+  const id = `${key}:${hours}`
+  let content = readouts.get(id)
+  if (!content) {
+    const clock = clockFor(hours)
+    content = (props) => (
+      <Readout
+        active={props.active}
+        row={props.payload?.[0]?.payload as Record<string, unknown> | undefined}
+        label={props.label}
+        clock={clock}
+        text={text}
+      />
+    )
+    readouts.set(id, content)
+  }
+  return content
+}
+
+function Readout({ active, row, label, clock, text }: {
+  active?: boolean
+  row?: Record<string, unknown>
+  label?: unknown
+  clock: (ms: number) => string
+  text: ReadoutText
+}) {
+  const slot = useContext(ReadoutSlot)
+  if (!slot || !active || !row) return null
+  return createPortal(
+    <div className="tnum absolute inset-0 flex items-center gap-2 bg-card text-xs leading-4">
+      <span className="shrink-0 text-muted-foreground">{clock(Number(label ?? row.ts))}</span>
+      <span className="min-w-0 truncate text-foreground">{text(row)}</span>
+    </div>,
+    slot,
+  )
+}
 
 /** A short line in a series' colour and dash, as a key or a chip's swatch. */
 export function Swatch({ color, dash }: { color: string; dash?: string }) {
@@ -251,11 +340,16 @@ export function Swatch({ color, dash }: { color: string; dash?: string }) {
  * more than one. The title row is one fixed height whether or not it carries a
  * key: sized by its content, a row with a key was 3 px taller and the plots
  * beside each other in the grid sat out of line.
+ *
+ * The row is also where the readout of the hovered or touched minute is drawn (see
+ * `readoutFor`), over the title, which it covers only while the pointer is on the
+ * plot.
  */
 export function Panel({ title, keys, children }: { title: string; keys?: Key[]; children: ReactNode }) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
   return (
     <div className="min-w-0">
-      <div className="mb-2 flex h-5 items-center justify-between gap-3">
+      <div ref={setSlot} className="relative mb-2 flex h-5 items-center justify-between gap-3">
         <h4 className="truncate text-xs leading-4 font-medium text-muted-foreground">{title}</h4>
         {keys && (
           <div className="flex shrink-0 items-center gap-3 text-[11px] leading-4 text-muted-foreground">
@@ -270,7 +364,9 @@ export function Panel({ title, keys, children }: { title: string; keys?: Key[]; 
       </div>
       {/* Clipped sideways: the tooltip is held within the plot, but its box
           can still be wider than a phone's panel for a moment. */}
-      <div className="h-40 w-full text-muted-foreground [overflow-x:clip] [overflow-clip-margin:4px]">{children}</div>
+      <div className="h-40 w-full text-muted-foreground [overflow-x:clip] [overflow-clip-margin:4px]">
+        <ReadoutSlot value={slot}>{children}</ReadoutSlot>
+      </div>
     </div>
   )
 }

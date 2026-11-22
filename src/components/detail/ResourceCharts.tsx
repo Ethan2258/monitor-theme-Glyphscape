@@ -1,11 +1,11 @@
-import { memo, useEffect, useMemo, useState, type ComponentProps } from "react"
+import { memo, useEffect, useMemo, useState, type ComponentProps, type PointerEvent } from "react"
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 
 import { Skeleton } from "@/components/ui/skeleton"
 import { axisBytes, bytes, clockFor, rate } from "@/lib/format"
 import {
-  axisWidth, AXIS, CHART_MARGIN, decimalAxis, isDense, keepTogether, Panel, pct, SERIES, soloDot, sortBy, timeAxis, tooltipFor,
-  unitTick,
+  axisWidth, AXIS, CHART_MARGIN, decimalAxis, isDense, keepTogether, Panel, pct, readoutFor, SERIES, soloDot, sortBy, timeAxis,
+  tooltipFor, unitTick,
 } from "./chart"
 
 // The range a bucket reached above its mean, drawn behind the line. Edged
@@ -34,8 +34,10 @@ const NET_KEYS = [{ label: "下行", color: "var(--color-rx)" }, { label: "上�
 
 // The panels share one cursor, by row: their widths are unified so that a CPU
 // spike and the network burst behind it sit at the same x, and the cursor in
-// each then points at the same minute.
+// each then points at the same minute. Not on a phone, where the panels are a
+// column taller than the screen and a tap opened a readout in all five.
 const SYNC = "node-resources"
+const syncOf = (narrow: boolean) => (narrow ? undefined : SYNC)
 
 type TipFormatter = NonNullable<ComponentProps<typeof Tooltip>["formatter"]>
 
@@ -54,6 +56,50 @@ const rateTip: TipFormatter = (_, name, item) => {
   const mean = item?.payload?.[`net_${item.dataKey}`]
   const top = item?.payload?.[`net_${item.dataKey}_max`]
   return [top === undefined ? rate(mean) : `均值 ${rate(mean)} · 峰值 ${rate(top)}`, name]
+}
+
+// A phone's one-line readouts (see `readoutFor`): the bucket's means, which is
+// what the line draws, and its peaks where they fit beside them. A row the gaps
+// put in carries no values.
+const num = (v: unknown) => (typeof v === "number" ? v : undefined)
+const cpuText = (r: Record<string, unknown>) => {
+  const cpu = num(r.cpu)
+  if (cpu === undefined) return "无数据"
+  const top = num(r.cpu_max)
+  return `均值 ${pct(cpu.toFixed(1))}${top === undefined ? "" : ` · 峰值 ${pct(top.toFixed(1))}`}`
+}
+const memText = (r: Record<string, unknown>) => {
+  const used = num(r.mem_used)
+  if (used === undefined) return "无数据"
+  const swap = num(r.swap_used)
+  return `内存 ${bytes(used)}${swap === undefined ? "" : ` · Swap ${bytes(swap)}`}`
+}
+const memTextNoSwap = (r: Record<string, unknown>) => {
+  const used = num(r.mem_used)
+  return used === undefined ? "无数据" : `内存 ${bytes(used)}`
+}
+const netText = (r: Record<string, unknown>) => {
+  const rx = num(r.net_rx)
+  const tx = num(r.net_tx)
+  return rx === undefined || tx === undefined ? "无数据" : `均值 ↓ ${rate(rx)} ↑ ${rate(tx)}`
+}
+const diskText = (r: Record<string, unknown>) => {
+  const used = num(r.disk_used)
+  return used === undefined ? "无数据" : `硬盘 ${bytes(used)}`
+}
+const countText = (r: Record<string, unknown>) => {
+  const [tcp, udp, procs] = [num(r.tcp), num(r.udp), num(r.procs)]
+  return tcp === undefined && procs === undefined ? "无数据" : `TCP ${tcp ?? "—"} · UDP ${udp ?? "—"} · 进程 ${procs ?? "—"}`
+}
+
+/**
+ * The tooltip a panel draws: its title row's readout, on a phone and on a
+ * desktop alike. A floating box, wherever it was pinned, sat over some of the
+ * lines -- the CPU's peak band runs along the plot's top. On a desktop the
+ * panels stay in step (`syncId`), so each shows the same minute in its own row.
+ */
+function tipOf(d: Draw, key: string, text: (r: Record<string, unknown>) => string) {
+  return { ...tooltipFor(d.hours), content: readoutFor(key, d.hours, text) }
 }
 
 const countTick = (v: number) => (v % 1 ? v.toFixed(1) : String(v))
@@ -82,7 +128,8 @@ export function ResourceSkeleton() {
 
 type Rows = { ts: number }[]
 type Axis = { domain: number[]; ticks: number[] }
-export type Availability = { up: number; slices: { up: number; from: number; to: number }[] } | null
+/** `up` is a slice's share of reporting, null for a slice before the node's history begins. */
+export type Availability = { up: number; slices: { up: number | null; from: number; to: number }[] } | null
 
 /**
  * One answer's worth of everything the panels draw, built once per change of
@@ -106,7 +153,18 @@ type Draw = {
   // Where a dash would break into confetti, the second and third lines of a
   // panel are told apart by colour alone.
   dense: boolean
+  // The time axis and dash decision for a last panel spanning both columns,
+  // laid out across that width; null where the panels are one column.
+  wide: { time: ReturnType<typeof timeAxis>; dense: boolean } | null
+  // Which answer this is. A refresh of the same window keeps it.
+  stage: string
 }
+
+/** The time axis and dash decision a panel draws with: the full-width ones for a last panel that spans. */
+const across = (d: Draw, last: boolean) => (last && d.wide ? d.wide : d)
+
+/** Whether `d`'s last panel spans both columns: the grid widens a last panel in an even place (see `RESOURCE_GRID`). */
+const lastSpans = (d: Draw) => d.wide !== null && ((d.availability ? 1 : 0) + 4 + (d.has.counts ? 1 : 0)) % 2 === 0
 
 /**
  * Runs `run` once the page is idle after the next frame, and returns how to
@@ -177,31 +235,71 @@ const valueAxis = (narrow: boolean) => ({ ...AXIS, width: axisWidth(narrow), int
  * The window as one strip, left to right: green where the node was reporting
  * throughout, amber where for part of the slice, a muted red where not at all
  * -- muted, or a node offline for the whole window is a wall of alarm on a page
- * already saying so. A slice here is many of the chart's points, so an outage
- * too short to break a line below still leaves its mark.
+ * already saying so -- and the grid's grey before its history begins. A slice
+ * here is many of the chart's points, so an outage too short to break a line
+ * below still leaves its mark.
+ *
+ * Sliced over the charts' own window, and inset by the value axis's width on
+ * the left and the plot's margin on the right, so its ends are the times the
+ * plots below begin and end at.
+ *
+ * The slice under the pointer, or under a finger on a phone, which has no
+ * hover, is read out in the title row in place of the window's figure. A
+ * finger's stays until the next tap, which on the same slice clears it.
  */
-const UptimeStrip = memo(function UptimeStrip({ availability, hours }: { availability: NonNullable<Availability>; hours: number }) {
+const UptimeStrip = memo(function UptimeStrip({ availability, hours, narrow }: {
+  availability: NonNullable<Availability>
+  hours: number
+  narrow: boolean
+}) {
   const clock = clockFor(hours)
+  const [at, setAt] = useState<number | null>(null)
+  const slices = availability.slices
+  const shown = at === null ? undefined : slices[at]
+  const share = (up: number) => pct((Math.floor(up * 1000) / 10).toFixed(1))
+  const indexOf = (e: PointerEvent<HTMLElement>) => {
+    const box = e.currentTarget.getBoundingClientRect()
+    return Math.min(slices.length - 1, Math.max(0, Math.floor(((e.clientX - box.left) / box.width) * slices.length)))
+  }
   return (
     <div className="lg:col-span-2">
       <h4 className="mb-2 flex h-5 items-center justify-between gap-3 text-xs leading-4 font-medium text-muted-foreground">
-        <span>在线率</span>
-        <span className={`tnum ${availability.up < 0.99 ? "text-warn" : ""}`}>
-          {/* Floored, never rounded up: a window with one minute away must
-              not read 100 %. */}
-          {pct((Math.floor(availability.up * 10000) / 100).toFixed(2))}
-        </span>
+        <span className="shrink-0">在线率</span>
+        {shown ? (
+          <span className="tnum truncate text-foreground">
+            {clock(shown.from)} – {clock(shown.to)} · {shown.up === null ? "无记录" : share(shown.up)}
+          </span>
+        ) : (
+          <span className={`tnum ${availability.up < 0.99 ? "text-warn" : ""}`}>
+            {/* Floored, never rounded up: a window with one minute away must
+                not read 100 %. */}
+            {pct((Math.floor(availability.up * 10000) / 100).toFixed(2))}
+          </span>
+        )}
       </h4>
-      <div className="flex h-6 gap-px">
-        {availability.slices.map((s) => (
+      <div
+        className="flex h-6 gap-px"
+        style={{ marginLeft: CHART_MARGIN.left + axisWidth(narrow), marginRight: CHART_MARGIN.right }}
+        onPointerMove={(e) => {
+          if (e.pointerType === "mouse") setAt(indexOf(e))
+        }}
+        onPointerLeave={(e) => {
+          if (e.pointerType === "mouse") setAt(null)
+        }}
+        onPointerDown={(e) => {
+          if (e.pointerType === "mouse") return
+          const i = indexOf(e)
+          setAt((was) => (was === i ? null : i))
+        }}
+      >
+        {slices.map((s, i) => (
           <span
             key={s.from}
-            title={`${clock(s.from)} – ${clock(s.to)} · ${pct((Math.floor(s.up * 1000) / 10).toFixed(1))}`}
             className={`min-w-0 flex-1 rounded-[1px] ${
               // Partial at three fifths: one amber slice at full strength in a
               // row of muted green drew the eye before the figure did.
-              s.up >= 0.999 ? "bg-online/55" : s.up > 0 ? "bg-warn/60" : "bg-hot/35"
-            }`}
+              s.up === null ? "bg-muted" : s.up >= 0.999 ? "bg-online/55" : s.up > 0 ? "bg-warn/60" : "bg-hot/35"
+            } ${i === at ? "outline outline-1 outline-foreground/60" : ""}`}
           />
         ))}
       </div>
@@ -222,11 +320,11 @@ const CpuPanel = memo(function CpuPanel({ d }: { d: Draw }) {
   return (
     <Panel title={d.peak.cpu === null ? "CPU" : `CPU · 峰值 ${pct(d.peak.cpu.toFixed(1))}`}>
       <ResponsiveContainer>
-        <ComposedChart data={d.rows} syncId={SYNC} margin={CHART_MARGIN}>
+        <ComposedChart data={d.rows} syncId={syncOf(d.narrow)} margin={CHART_MARGIN}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
           <XAxis {...d.time} />
           <YAxis {...d.axes.cpu} tickFormatter={percentTick} {...valueAxis(d.narrow)} />
-          <Tooltip {...tooltipFor(d.hours)} formatter={cpuTip} />
+          <Tooltip {...tipOf(d, "cpu", cpuText)} formatter={cpuTip} />
           <Area dataKey="cpu_band" stroke="var(--color-ink)" fill="var(--color-ink)" {...PEAK_BAND} />
           <Line dataKey="cpu" name="CPU" stroke="var(--color-ink)" {...seriesOf(d.solo, "cpu")} />
         </ComposedChart>
@@ -256,11 +354,11 @@ const MemoryPanel = memo(function MemoryPanel({ d }: { d: Draw }) {
       ] : undefined}
     >
       <ResponsiveContainer>
-        <ComposedChart data={d.rows} syncId={SYNC} margin={CHART_MARGIN} accessibilityLayer={false}>
+        <ComposedChart data={d.rows} syncId={syncOf(d.narrow)} margin={CHART_MARGIN} accessibilityLayer={false}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
           <XAxis {...d.time} />
           <YAxis {...d.axes.mem} tickFormatter={tick} {...valueAxis(d.narrow)} />
-          <Tooltip {...tooltipFor(d.hours)} formatter={bytesTip} itemSorter={MEM_ORDER} />
+          <Tooltip {...tipOf(d, d.has.swap ? "mem" : "mem-", d.has.swap ? memText : memTextNoSwap)} formatter={bytesTip} itemSorter={MEM_ORDER} />
           <Area dataKey="mem_used" name="内存" stroke="var(--color-chart-1)" fill="var(--color-chart-1)" fillOpacity={0.15} {...seriesOf(d.solo, "mem_used")} />
           {d.has.swap && (
             <Line dataKey="swap_used" name="Swap" stroke="var(--color-chart-3)" strokeDasharray={dash} {...seriesOf(d.solo, "swap_used")} />
@@ -290,13 +388,13 @@ const NetworkPanel = memo(function NetworkPanel({ d }: { d: Draw }) {
       keys={NET_KEYS}
     >
       <ResponsiveContainer>
-        <ComposedChart data={d.rows} syncId={SYNC} margin={CHART_MARGIN} accessibilityLayer={false}>
+        <ComposedChart data={d.rows} syncId={syncOf(d.narrow)} margin={CHART_MARGIN} accessibilityLayer={false}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
           <XAxis {...d.time} />
           {/* "/s" left off on a phone, where the axis is narrower and the
               title's peak already says it is a rate. */}
           <YAxis scale="log" {...d.axes.rate} tickFormatter={d.narrow ? rateTickNarrow : rateTick} {...valueAxis(d.narrow)} />
-          <Tooltip {...tooltipFor(d.hours)} formatter={rateTip} itemSorter={NET_ORDER} />
+          <Tooltip {...tipOf(d, "net", netText)} formatter={rateTip} itemSorter={NET_ORDER} />
           {/* Water for what comes in, the koi's red for what goes out. */}
           <Area dataKey="rx_band" stroke="var(--color-rx)" fill="var(--color-rx)" {...PEAK_BAND} />
           <Area dataKey="tx_band" stroke="var(--color-tx)" fill="var(--color-tx)" {...PEAK_BAND} />
@@ -314,16 +412,17 @@ const NetworkPanel = memo(function NetworkPanel({ d }: { d: Draw }) {
  * own maximum.
  */
 const DiskPanel = memo(function DiskPanel({ d }: { d: Draw }) {
+  const { time } = across(d, !d.has.counts && lastSpans(d))
   const disk = useMemo(() => decimalAxis(d.diskTotal), [d.diskTotal])
   const tick = useMemo(() => unitTick(disk.domain[1]), [disk])
   return (
     <Panel title={`硬盘 · ${bytes(d.diskTotal)}`}>
       <ResponsiveContainer>
-        <ComposedChart data={d.rows} syncId={SYNC} margin={CHART_MARGIN} accessibilityLayer={false}>
+        <ComposedChart data={d.rows} syncId={syncOf(d.narrow)} margin={CHART_MARGIN} accessibilityLayer={false}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-          <XAxis {...d.time} />
+          <XAxis {...time} />
           <YAxis {...disk} tickFormatter={tick} {...valueAxis(d.narrow)} />
-          <Tooltip {...tooltipFor(d.hours)} formatter={bytesTip} />
+          <Tooltip {...tipOf(d, "disk", diskText)} formatter={bytesTip} />
           <Area dataKey="disk_used" name="硬盘" stroke="var(--color-chart-4)" fill="var(--color-chart-4)" fillOpacity={0.15} {...seriesOf(d.solo, "disk_used")} />
         </ComposedChart>
       </ResponsiveContainer>
@@ -333,8 +432,11 @@ const DiskPanel = memo(function DiskPanel({ d }: { d: Draw }) {
 
 /** Open sockets and running processes, each bucket's average. Only a hub that keeps them in history has this panel. */
 const CountsPanel = memo(function CountsPanel({ d }: { d: Draw }) {
-  const udp = d.dense ? undefined : "5 3"
-  const procs = d.dense ? undefined : "2 3"
+  // Two columns wide where it is last in an even place, so its axis is laid
+  // out across that width rather than one column's.
+  const { time, dense } = across(d, lastSpans(d))
+  const udp = dense ? undefined : "5 3"
+  const procs = dense ? undefined : "2 3"
   return (
     <Panel
       title="连接与进程"
@@ -345,11 +447,11 @@ const CountsPanel = memo(function CountsPanel({ d }: { d: Draw }) {
       ]}
     >
       <ResponsiveContainer>
-        <ComposedChart data={d.rows} syncId={SYNC} margin={CHART_MARGIN} accessibilityLayer={false}>
+        <ComposedChart data={d.rows} syncId={syncOf(d.narrow)} margin={CHART_MARGIN} accessibilityLayer={false}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-          <XAxis {...d.time} />
+          <XAxis {...time} />
           <YAxis {...d.axes.counts} tickFormatter={countTick} {...valueAxis(d.narrow)} />
-          <Tooltip {...tooltipFor(d.hours)} itemSorter={COUNT_ORDER} />
+          <Tooltip {...tipOf(d, "counts", countText)} itemSorter={COUNT_ORDER} />
           <Line dataKey="tcp" name="TCP" stroke="var(--color-chart-1)" {...seriesOf(d.solo, "tcp")} />
           <Line dataKey="udp" name="UDP" stroke="var(--color-chart-3)" strokeDasharray={udp} {...seriesOf(d.solo, "udp")} />
           <Line dataKey="procs" name="进程" stroke="var(--color-ink)" strokeDasharray={procs} {...seriesOf(d.solo, "procs")} />
@@ -367,36 +469,46 @@ const CountsPanel = memo(function CountsPanel({ d }: { d: Draw }) {
  * Drawn in stages (see `useStages`): the strip and CPU in the commit that
  * brings the answer, then memory, network, disk and the counts, one at a time. Until its turn a panel keeps the previous answer, or on its
  * first draw a skeleton of its size, so nothing below it moves. `onDrawn`
- * hears the rows once the last panel holds them, which is when the page
- * undims.
+ * hears once the last panel holds the answer, which is when the page undims.
  *
  * `window` is the span the history was asked for, `plot` the width in pixels of
- * one panel's plot, which decides how many time labels fit, and `solo` the
- * series with a point no line reaches.
+ * one panel's plot, which decides how many time labels fit, `widePlot` that of
+ * a panel spanning both columns, null where the panels are one column, and
+ * `solo` the series with a point no line reaches. `stage` names the answer:
+ * `onDrawn` hears it once every panel holds it, and a refresh of the same
+ * window keeps it, which is how the page knows not to dim for one.
  */
 export const ResourceCharts = memo(function ResourceCharts({
-  rows, window, plot, narrow, solo, axes, peak, has, availability, hours, memTotal, swapTotal, diskTotal, onDrawn,
-}: Omit<Draw, "time" | "dense"> & { window: [number, number]; onDrawn?: (rows: Rows) => void }) {
+  rows, window, plot, widePlot, narrow, solo, axes, peak, has, availability, hours, memTotal, swapTotal, diskTotal, stage,
+  onDrawn,
+}: Omit<Draw, "time" | "dense" | "wide"> & {
+  window: [number, number]
+  widePlot: number | null
+  onDrawn?: (stage: string) => void
+}) {
   const draw = useMemo(
     (): Draw => ({
-      rows, plot, narrow, solo, axes, peak, has, availability, hours, memTotal, swapTotal, diskTotal,
+      rows, plot, narrow, solo, axes, peak, has, availability, hours, memTotal, swapTotal, diskTotal, stage,
       time: timeAxis(window[0], window[1], hours, plot),
       dense: isDense(rows, window, plot),
+      wide: widePlot === null
+        ? null
+        : { time: timeAxis(window[0], window[1], hours, widePlot), dense: isDense(rows, window, widePlot) },
     }),
-    [rows, window, plot, narrow, solo, axes, peak, has, availability, hours, memTotal, swapTotal, diskTotal],
+    [rows, window, plot, widePlot, narrow, solo, axes, peak, has, availability, hours, memTotal, swapTotal, diskTotal, stage],
   )
   const [memory, network, disk, counts] = useStages(draw, 4)
 
   // A frame after the last stage's commit, by when recharts has laid it out.
   useEffect(() => {
     if (counts !== draw || !onDrawn) return
-    const id = requestAnimationFrame(() => onDrawn(draw.rows))
+    const id = requestAnimationFrame(() => onDrawn(draw.stage))
     return () => cancelAnimationFrame(id)
   }, [counts, draw, onDrawn])
 
   return (
     <div className={RESOURCE_GRID}>
-      {draw.availability && <UptimeStrip availability={draw.availability} hours={draw.hours} />}
+      {draw.availability && <UptimeStrip availability={draw.availability} hours={draw.hours} narrow={draw.narrow} />}
       <CpuPanel d={draw} />
       {memory ? <MemoryPanel d={memory} /> : <PanelSkeleton />}
       {network ? <NetworkPanel d={network} /> : <PanelSkeleton />}

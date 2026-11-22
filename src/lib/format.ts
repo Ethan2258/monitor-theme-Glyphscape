@@ -323,14 +323,48 @@ export const RATE_FLOOR = rung(FLOOR)
  * 1 KB/s to 1 GB/s is seven, and a label on each would sit 20 px from the next.
  */
 export function rateAxis(low: number, high: number): { domain: [number, number]; ticks: number[] } {
+  const [bottom, top] = rateRungs(low, high)
+  return { domain: [rung(bottom), rung(top)], ticks: rungTicks(bottom, top) }
+}
+
+/** The rungs `rateAxis` spans: the one at or below `low`, and the one at or above `high`, at least one apart. */
+function rateRungs(low: number, high: number): [number, number] {
   let bottom = FLOOR
   while (rung(bottom + 1) <= Math.min(low, high)) bottom++
   let top = bottom + 1
   while (rung(top) < high) top++
+  return [bottom, top]
+}
+
+/** Every rung from `top` down to `bottom`, or every other one past six, counted from the top. */
+function rungTicks(bottom: number, top: number): number[] {
   const step = Math.ceil((top - bottom) / 5)
   const ticks: number[] = []
   for (let i = top; i >= bottom; i -= step) ticks.unshift(rung(i))
-  return { domain: [rung(bottom), rung(top)], ticks }
+  return ticks
+}
+
+/**
+ * `rateAxis` with its top brought down to twice or five times the rung below
+ * it where that still clears `high` with a tenth to spare. Rounded up to the
+ * next rung, a burst of 10.6 MB/s got an axis to 100 MB/s, which left the top
+ * decade of the panel empty and drew the burst at four fifths of the height.
+ *
+ * The gridlines stay on the rungs, so every label is still 1, 10 or 100 of a
+ * unit. A top of five times a rung is labelled too, seven tenths of a decade
+ * above the rung beneath, so the axis still says how far it reaches; a top of
+ * twice one is not, as it would sit three tenths of a decade from the rung's
+ * label, which is near the top anyway. An axis spanning less than a decade
+ * above its floor keeps the whole decade, or an idle line's noise would fill
+ * the panel.
+ */
+export function snugRateAxis(low: number, high: number): { domain: [number, number]; ticks: number[] } {
+  const [bottom, top] = rateRungs(low, high)
+  const below = rung(top - 1)
+  const times = top - 1 > bottom ? [2, 5].find((k) => below * k >= high * 1.1) : undefined
+  if (times === undefined) return rateAxis(low, high)
+  const ticks = rungTicks(bottom, top - 1)
+  return { domain: [rung(bottom), below * times], ticks: times === 5 ? [...ticks, below * 5] : ticks }
 }
 
 /**

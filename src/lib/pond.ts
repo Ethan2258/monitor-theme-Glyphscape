@@ -10,6 +10,78 @@ let instance: PondInstance | null = null
 const root = document.documentElement
 
 /**
+ * How often the character scenes, the pond and the realm, are drawn: 30 frames
+ * a second rather than the display's 60 or 120. Their fish and ghosts drift
+ * slowly enough that 30 reads as smooth, and at full rate the realm alone kept
+ * the main thread busy nearly all the time, slowing the globe and the live
+ * figures beside it on a phone. The globe keeps the full rate.
+ */
+export const SCENE_FPS = 30
+
+const COARSE = matchMedia("(pointer: coarse), (max-width: 639px)")
+
+/**
+ * The pixel density the character scenes are drawn at: 1x on a phone (a
+ * finger for a pointer, or a narrow window), where the pond's canvas was
+ * otherwise 780 by 2071 pixels, four times the work for glyphs that are
+ * decoration behind the text. Read on each resize, so a window that narrows
+ * drops to it too.
+ */
+export const sceneDpr = () => (COARSE.matches ? 1 : 2)
+
+/**
+ * Calls `measure` once a frame at most whenever the head of the page, `host`,
+ * may have moved what lies over a scene: it changed size (the window, data
+ * arriving, a filter, the globe's chips wrapping), its contents changed (each
+ * push of figures), something inside it scrolled sideways (the chips on a
+ * phone), or a font arrived. The scenes sit inside `host` and scroll with it,
+ * so a scroll of the page never moves the text against them and needs no
+ * measuring; before, the pond re-measured on every frame of a scroll and the
+ * realm forced a layout every second. Returns what stops it.
+ */
+export function followLayout(host: Element, measure: () => void): () => void {
+  let frame = 0
+  const soon = () => {
+    if (!frame) frame = requestAnimationFrame(() => {
+      frame = 0
+      measure()
+    })
+  }
+  const sized = new ResizeObserver(soon)
+  sized.observe(host)
+  const changed = new MutationObserver(soon)
+  changed.observe(host, { childList: true, subtree: true, characterData: true })
+  // Capture: a scroll event does not bubble, but an ancestor still sees it on the way down.
+  host.addEventListener("scroll", soon, { capture: true, passive: true })
+  document.fonts?.addEventListener("loadingdone", soon)
+  return () => {
+    sized.disconnect()
+    changed.disconnect()
+    host.removeEventListener("scroll", soon, { capture: true })
+    document.fonts?.removeEventListener("loadingdone", soon)
+    if (frame) cancelAnimationFrame(frame)
+  }
+}
+
+// One request for the engine, shared by the idle prefetch, the scene menu and
+// the pond itself. Let go of if it fails, so a later attempt tries again.
+let engine: Promise<typeof import("@/vendor/ascii-pond/pond.js")> | null = null
+const loadEngine = () =>
+  (engine ??= import("@/vendor/ascii-pond/pond.js").catch((e: unknown) => {
+    engine = null
+    throw e
+  }))
+
+/**
+ * Fetches the pond's engine ahead of need: on idle after the page has loaded,
+ * and as the scene menu opens, so switching to it does not wait on the
+ * network. A failure here is left for the real start to report.
+ */
+export function preloadPond() {
+  loadEngine().catch(() => {})
+}
+
+/**
  * The pond's palette follows the page's. Over `duration` milliseconds it blends:
  * the pond is switched at once underneath, and a still of it as it was lies on
  * top and fades away in the page's own ease, so the water changes colour with
@@ -98,7 +170,7 @@ export type Fish = "auto" | "few" | "many"
 export function startPond(canvas: HTMLCanvasElement, { feed, fish }: { feed: boolean; fish: Fish }): () => void {
   let stopped = false
   let stop = () => {}
-  void import("@/vendor/ascii-pond/pond.js").then(({ mount }) => {
+  void loadEngine().then(({ mount }) => {
     if (stopped) return
     const started = mount(canvas, {
       // The page decides, through setPondTheme; the pond does not follow the
@@ -110,13 +182,20 @@ export function startPond(canvas: HTMLCanvasElement, { feed, fish }: { feed: boo
       feed,
       // A click on anything that answers a click is not a throw of food.
       ignore: 'a, button, input, textarea, select, label, [role="button"], [data-slot="card"], [data-pond-ignore]',
+      fps: SCENE_FPS,
+      maxDpr: sceneDpr,
+      // Measured from followLayout below instead of on every scroll and every
+      // thirtieth frame.
+      autoMeasure: false,
     })
     const dim = started.renderer.setDimBoxes.bind(started.renderer)
     started.renderer.setDimBoxes = (boxes) => dim([...boxes, ...dimBoxes(canvas)])
     started.measure()
     instance = started
+    const unfollow = canvas.parentElement ? followLayout(canvas.parentElement, () => started.measure()) : () => {}
     stop = () => {
       if (instance === started) instance = null
+      unfollow()
       started.destroy()
     }
   })

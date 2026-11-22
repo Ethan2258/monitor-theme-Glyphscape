@@ -1,8 +1,11 @@
 import { memo, startTransition, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react"
+import { createPortal } from "react-dom"
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 
 import { clockFor } from "@/lib/format"
-import { AXIS, axisWidth, CHART_MARGIN, isDense, PALETTE, pct, RING, SERIES, sortBy, timeAxis, tooltipFor } from "./chart"
+import {
+  AXIS, axisWidth, CHART_MARGIN, isDense, niceAxis, PALETTE, pct, RING, SERIES, sortBy, timeAxis, tooltipFor,
+} from "./chart"
 import { RangeControl, type Range } from "./RangeControl"
 
 export type Probe = { id: number; name: string }
@@ -55,10 +58,12 @@ function within(rows: PingRow[], [from, to]: Range): PingRow[] {
  *
  * `window` is the span the history was asked for, `plot` the plot's width in
  * pixels, `order` every probe in the order of the chips beneath, so the tooltip
- * lists them alike.
+ * lists them alike. `controls` is a place in the page's controls row, beside
+ * 削峰, where the zoomed span and the button resetting it are drawn: set over
+ * the plot's top corner, they covered the highest line.
  */
 export const LatencyChart = memo(function LatencyChart({
-  rows, window, plot, narrow, probes, order, style, spread, smooth, hours,
+  rows, window, plot, narrow, probes, order, style, spread, smooth, hours, controls,
 }: {
   rows: PingRow[]
   window: [number, number]
@@ -70,6 +75,7 @@ export const LatencyChart = memo(function LatencyChart({
   spread: boolean
   smooth: boolean
   hours: number
+  controls: HTMLElement | null
 }) {
   const [zoom, setZoom] = useState<Range | null>(null)
 
@@ -120,6 +126,33 @@ export const LatencyChart = memo(function LatencyChart({
   }, [zoomed, reset])
 
   const keys = useMemo(() => order.map((id) => `${smooth ? "s" : "t"}${id}`), [order, smooth])
+
+  // The value axis, fitted to what is drawn -- the lines, and the band where
+  // there is one -- on a round step with a gridline above the highest point.
+  // Left to recharts, the top tick could fall below the data, and a probe at
+  // 45-50 ms ran along the plot's top edge above a last label of 40 ms. On the
+  // square-root scale it starts at zero, which that scale has and needs.
+  const yAxis = useMemo(() => {
+    const series = probes.map((p) => `${smooth ? "s" : "t"}${p.id}`)
+    const band = probes.length === 1 ? `${smooth ? "c" : "b"}${probes[0].id}` : null
+    let lo = Infinity
+    let hi = -Infinity
+    for (const r of drawn) {
+      for (const k of series) {
+        const v = r[k]
+        if (typeof v === "number") {
+          lo = Math.min(lo, v)
+          hi = Math.max(hi, v)
+        }
+      }
+      const b = band && r[band]
+      if (Array.isArray(b)) {
+        lo = Math.min(lo, b[0])
+        hi = Math.max(hi, b[1])
+      }
+    }
+    return niceAxis(spread ? 0 : Math.max(0, lo), hi)
+  }, [drawn, probes, smooth, spread])
   const sorter = useMemo(() => sortBy(keys), [keys])
   const tip = tooltipFor(hours)
   // Where a dash would break into confetti, the probes are told apart by
@@ -131,7 +164,7 @@ export const LatencyChart = memo(function LatencyChart({
 
   return (
     <div
-      className="relative flex h-full flex-col gap-2"
+      className="flex h-full flex-col gap-2"
       onKeyDown={(e) => {
         if (e.key === "Escape" && view) {
           e.stopPropagation()
@@ -139,21 +172,24 @@ export const LatencyChart = memo(function LatencyChart({
         }
       }}
     >
-      {view && (
-        <div className="absolute top-0 right-4 z-10 flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span className="tnum hidden md:inline">
-            {clock(view[0])} – {clock(view[1])}
-          </span>
-          <button
-            type="button"
-            onClick={reset}
-            title="重置缩放 (Esc)"
-            className={`rounded-md border bg-card px-2 py-0.5 text-xs text-foreground hover:bg-muted ${RING}`}
-          >
-            重置缩放
-          </button>
-        </div>
-      )}
+      {view &&
+        controls &&
+        createPortal(
+          <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="tnum hidden sm:inline">
+              {clock(view[0])} – {clock(view[1])}
+            </span>
+            <button
+              type="button"
+              onClick={reset}
+              title="重置缩放 (Esc)"
+              className={`inline-flex min-h-6 items-center rounded-md border px-2 text-xs text-foreground hover:bg-muted ${RING}`}
+            >
+              重置缩放
+            </button>
+          </span>,
+          controls,
+        )}
       <div className="min-h-0 flex-1">
         <ResponsiveContainer>
           <ComposedChart data={drawn} margin={CHART_MARGIN}>
@@ -163,9 +199,9 @@ export const LatencyChart = memo(function LatencyChart({
                 it, and zero flattens every wobble. As wide as the resource
                 panels' axes, so the two tabs' plots begin at the same x. */}
             {spread ? (
-              <YAxis tickFormatter={msTick} width={axisWidth(narrow)} scale="sqrt" domain={[0, "auto"]} {...AXIS} />
+              <YAxis tickFormatter={msTick} width={axisWidth(narrow)} scale="sqrt" {...yAxis} interval={0} {...AXIS} />
             ) : (
-              <YAxis tickFormatter={msTick} width={axisWidth(narrow)} domain={["auto", "auto"]} {...AXIS} />
+              <YAxis tickFormatter={msTick} width={axisWidth(narrow)} {...yAxis} interval={0} {...AXIS} />
             )}
             <Tooltip {...tip} formatter={latencyTip} itemSorter={sorter} filterNull={false} />
             {/* Behind the line, the range that bucket's answers spanned --

@@ -286,6 +286,9 @@ export function Globe({ markers, selected, onPick }: {
       const { markers, selected } = live.current
       const rank = (m: Marker) => Number(m.code === selected) * 2 + Number(m.code === hover)
       hits = []
+      // The counts are set after every bead is down, so a later bead cannot
+      // cover an earlier count.
+      const counts: { count: number; x: number; y: number; bead: number; near: number }[] = []
       for (const m of [...markers].sort((a, b) => rank(a) - rank(b))) {
         const p = project(m.lat, m.lon)
         if (p.z < 0.08) continue
@@ -314,16 +317,7 @@ export function Globe({ markers, selected, onPick }: {
         ctx.beginPath()
         ctx.arc(x, y, bead, 0, Math.PI * 2)
         ctx.fill()
-        // More than one node there: how many, beside the bead.
-        if (m.count > 1) {
-          ctx.font = `600 ${Math.round(10 + Math.min(2, size / 200))}px "Geist Mono Variable", ui-monospace, monospace`
-          ctx.textBaseline = "middle"
-          ctx.lineWidth = 3
-          ctx.strokeStyle = colors.globe
-          ctx.strokeText(String(m.count), x + bead + 3, y)
-          ctx.fillStyle = colors.fg
-          ctx.fillText(String(m.count), x + bead + 3, y)
-        }
+        if (m.count > 1) counts.push({ count: m.count, x, y, bead, near })
         if (active) {
           ctx.strokeStyle = colors.fg
           ctx.lineWidth = 1.25
@@ -333,6 +327,7 @@ export function Globe({ markers, selected, onPick }: {
         }
         hits.push({ code: m.code, x, y, reach: Math.max(12, bead + 6) })
       }
+      drawCounts(counts, cx, cy)
       ctx.globalAlpha = 1
       if (cursor && !drag && pointerInside) {
         const h = hit(cursor.x, cursor.y)
@@ -340,8 +335,63 @@ export function Globe({ markers, selected, onPick }: {
       }
     }
 
+    /**
+     * How many nodes a marker stands for, beside its bead, for those with more
+     * than one. Neighbouring countries (Hong Kong, Taiwan, Japan) sit a few
+     * pixels apart, and their counts used to print over each other as "2",
+     * "3." and "3". Each count, the largest first, takes the first place
+     * clear of the beads and of the counts already set -- right of its bead,
+     * then left, above, below -- and nearer its own bead than any other.
+     * Failing all four it is left out: the chips below the globe and its
+     * hover label still give it.
+     */
+    const drawCounts = (list: { count: number; x: number; y: number; bead: number; near: number }[], cx: number, cy: number) => {
+      if (!list.length) return
+      const px = Math.round(10 + Math.min(2, view.size / 200))
+      ctx.font = `600 ${px}px "Geist Mono Variable", ui-monospace, monospace`
+      ctx.textBaseline = "middle"
+      ctx.textAlign = "left"
+      ctx.lineWidth = 3
+      type Box = { l: number; t: number; r: number; b: number }
+      const taken: Box[] = list.map((m) => ({ l: m.x - m.bead - 1, t: m.y - m.bead - 1, r: m.x + m.bead + 1, b: m.y + m.bead + 1 }))
+      const clear = (a: Box) => taken.every((b) => a.r <= b.l || a.l >= b.r || a.b <= b.t || a.t >= b.b)
+      for (const m of [...list].sort((a, b) => b.count - a.count)) {
+        const text = String(m.count)
+        const w = ctx.measureText(text).width, h = px
+        const gap = m.bead + 3
+        // The side facing away from the globe's centre first, so a label near
+        // the rim reads outward rather than back over the land.
+        const sides = m.x >= cx ? ["right", "left"] : ["left", "right"]
+        const vertical = m.y >= cy ? ["below", "above"] : ["above", "below"]
+        let placed: { box: Box; x: number; y: number } | null = null
+        for (const side of [...sides, ...vertical]) {
+          const x = side === "right" ? m.x + gap : side === "left" ? m.x - gap - w : m.x - w / 2
+          const y = side === "above" ? m.y - gap - h / 2 : side === "below" ? m.y + gap + h / 2 : m.y
+          const box = { l: x - 1, t: y - h / 2, r: x + w + 1, b: y + h / 2 }
+          // Nearer its own bead than any other, or it reads as a neighbour's.
+          const mx = (box.l + box.r) / 2, my = (box.t + box.b) / 2
+          const own = Math.hypot(mx - m.x, my - m.y)
+          const mine = list.every((o) => o === m || Math.hypot(mx - o.x, my - o.y) > own)
+          if (mine && clear(box)) {
+            placed = { box, x, y }
+            break
+          }
+        }
+        if (!placed) continue
+        taken.push(placed.box)
+        ctx.globalAlpha = m.near
+        ctx.strokeStyle = colors.globe
+        ctx.strokeText(text, placed.x, placed.y)
+        ctx.fillStyle = colors.fg
+        ctx.fillText(text, placed.x, placed.y)
+      }
+    }
+
     const tick = (now: number) => {
-      raf = requestAnimationFrame(tick)
+      // Scheduled only while the globe is on screen: off it, the loop is
+      // cancelled outright (see `seen` below) rather than woken every frame to
+      // return at once.
+      raf = inView ? requestAnimationFrame(tick) : 0
       const dt = Math.min(0.05, Math.max(0, (now - last) / 1000))
       last = now
       if (!inView || !view.size) return
@@ -534,12 +584,18 @@ export function Globe({ markers, selected, onPick }: {
 
     const sized = new ResizeObserver(resize)
     sized.observe(canvas)
-    // Off screen, and in a tab that is not showing, nothing is drawn.
+    // Off screen nothing runs: the loop is stopped, and started again, from
+    // the moment it left, when the globe comes back. A tab that is not showing
+    // gets no frames anyway.
     const seen = new IntersectionObserver(([entry]) => {
       const was = inView
       inView = entry.isIntersecting
       if (inView && !was) {
         last = performance.now()
+        if (!raf) raf = requestAnimationFrame(tick)
+      } else if (!inView && raf) {
+        cancelAnimationFrame(raf)
+        raf = 0
       }
     })
     seen.observe(canvas)
@@ -574,7 +630,7 @@ export function Globe({ markers, selected, onPick }: {
     <div
       data-pond-ignore=""
       data-sky-ignore=""
-      className="relative mx-auto aspect-square w-full max-w-[12rem] sm:max-w-[17rem] lg:max-w-[19rem]"
+      className="relative mx-auto aspect-square w-full max-w-[9.5rem] sm:max-w-[17rem] lg:max-w-[19rem]"
     >
       <canvas
         ref={canvasRef}

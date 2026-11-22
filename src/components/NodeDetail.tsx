@@ -11,7 +11,7 @@ import { api, type Node } from "@/lib/api"
 import { convert, remaining, type Rates } from "@/lib/cost"
 import {
   axisTop, bytes, cycle, despike, quarters, cpuName, FOREVER, money, osName, pair,
-  RATE_FLOOR, rateAxis, sinceSeen, windows, withGaps,
+  RATE_FLOOR, sinceSeen, snugRateAxis, windows, withGaps,
 } from "@/lib/format"
 
 type Point = {
@@ -119,7 +119,7 @@ function despikeWindow(points: { ts: number }[]): number {
   return Math.min(15, Math.max(3, Math.round(420 / step) | 1))
 }
 
-function Fact({ label, value }: { label: string; value?: string | number | null }) {
+function Fact({ label, value }: { label: string; value?: React.ReactNode }) {
   if (value === null || value === undefined || value === "") return null
   return (
     <div className="flex min-w-0 items-baseline justify-between gap-4 border-b border-dashed py-2 last:border-b-0">
@@ -176,9 +176,10 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
   // Counts the timed refreshes, each of which runs the fetch again.
   const [tick, setTick] = useState(0)
   // New history is drawn in a transition: five charts of several hundred points
-  // each take long enough to drop frames, and the old ones stay on screen,
-  // dimmed, meanwhile.
-  const [drawing, startDrawing] = useTransition()
+  // each take long enough to drop frames, and the old ones stay on screen
+  // meanwhile -- dimmed for a new window (see `stale`), as they are for a
+  // refresh of the same one.
+  const [, startDrawing] = useTransition()
   const narrow = useNarrow()
   const entry = loaded[tab]
   // Another node's history is never shown in this one's place, dimmed or not.
@@ -216,6 +217,8 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
   // viewport as the breakpoint is; `width` changing is what re-renders this.
   const panelWidth = tab === "resources" && innerWidth >= 1024 ? (width - 40) / 2 : width
   const plot = Math.max(120, panelWidth - axisWidth(narrow) - CHART_MARGIN.right)
+  // A panel spanning both columns, as the last one in an even place does.
+  const widePlot = panelWidth === width ? null : Math.max(120, width - axisWidth(narrow) - CHART_MARGIN.right)
 
   useEffect(() => {
     let active = true
@@ -237,8 +240,12 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
     // A refresh replaces the window in place, undimmed; a failed one keeps
     // what is drawn and tries again at the next bucket.
     const refresh = same
-    const settle = (history: History, failed = "") => {
+    const settle = (answer: History, failed = "") => {
       if (!active) return
+      // An answer no different from the one drawn keeps the one drawn, whose
+      // rows the charts already hold: handed an equal copy, all five would
+      // redraw for nothing.
+      const history = refresh && cached && JSON.stringify(answer) === JSON.stringify(cached.history) ? cached.history : answer
       const next = { ...cache.current, [tab]: { node: node.id, hours, attempt, history, failed, at: Date.now() } }
       cache.current = next
       startDrawing(() => setLoaded(next))
@@ -251,9 +258,16 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
     //
     // The tab determines which half is requested; the other accounted for a third
     // to two thirds of every response and was never drawn.
+    //
+    // Half that for the resources over a day or more, which arrive as five
+    // panels, each redrawn whole with every answer: at a point a pixel, a day's
+    // five took 1.8-2.2 s of long frames in development. Two pixels a point
+    // still draws every swing a reader can see at that span, and the peaks a
+    // coarser bucket averages away are in its band.
     const across = area.current?.clientWidth || innerWidth - 64
     const panel = tab === "resources" && innerWidth >= 1024 ? (across - 40) / 2 : across
-    const points = Math.min(1440, Math.max(60, Math.round(panel)))
+    const per = tab === "resources" && hours >= 24 ? 2 : 1
+    const points = Math.min(1440, Math.max(60, Math.round(panel / per)))
     const series = tab === "latency" ? "ping" : "metrics"
     api<History>(`/nodes/${node.id}/metrics?hours=${hours}&points=${points}&series=${series}`)
       .then((next) => settle(next))
@@ -285,10 +299,14 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
       cancelAnimationFrame(second)
     }
   }, [shownKey])
-  // The resource panels take a new answer one at a time, and report the rows
+  // The resource panels take a new answer one at a time, and report which
   // once the last of them holds it; until then the picture is part old and
-  // part new, and stays dimmed.
-  const [drawnRows, setDrawnRows] = useState<object | null>(null)
+  // part new, and stays dimmed. Reported by its key rather than its rows: a
+  // refresh brings new rows for the same window, which the panels take in the
+  // same way but which is no reason to dim -- it did, for 1-1.6 s a minute.
+  const [drawnStage, setDrawnStage] = useState("")
+  // Where the latency chart puts its zoom's controls, in the row above.
+  const [zoomSlot, setZoomSlot] = useState<HTMLElement | null>(null)
 
   // The tallest the chart area has been during this visit to this node, which
   // it is not drawn shorter than. The latency tab is some 250 px shorter than
@@ -305,9 +323,17 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
     if (!el) return
     const watch = new ResizeObserver(() => {
       const height = el.offsetHeight
+      // As far as the page runs on below the window, the floor can go when
+      // the content shrinks: the page then shortens by no more than it can
+      // without the browser clamping the scroll, so nothing jumps. At the top
+      // of the page that is all of it, which left 280 px of blank under the
+      // latency chart at 1440 x 900; scrolled to the foot, none of it.
+      const room = Math.max(0, document.documentElement.scrollHeight - innerHeight - scrollY)
       setFloor((f) => {
         const held = f.key === floorKey ? f.height : 0
-        return height <= held ? f : { key: floorKey, height }
+        if (height >= held) return height === held ? f : { key: floorKey, height }
+        const next = Math.max(height, held - room)
+        return next === held ? f : { key: floorKey, height: next }
       })
     })
     watch.observe(el)
@@ -440,7 +466,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
       counts: { domain: [0, counts], ticks: quarters(counts) },
       // From the slowest rate drawn to the highest peak, so the band stays
       // within the panel.
-      rate: rateAxis(
+      rate: snugRateAxis(
         metricRows.reduce((lo, m) => Math.min(lo, m.rx, m.tx), Infinity),
         max((m) => Math.max(m.rx_band[1], m.tx_band[1])),
       ),
@@ -478,6 +504,10 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
   // bucket with data rather than from the window's start, before which the node
   // may simply not have existed.
   //
+  // The strip's slices cover the charts' own window, so a slice sits over the
+  // stretch of the plots it describes; one before the first bucket has no
+  // record rather than an outage.
+  //
   // An agent reporting less often than once a minute fills fewer minutes than
   // it was up for, and reads low here; nothing in the response says so.
   const slicesMax = narrow ? UPTIME_SLICES_NARROW : UPTIME_SLICES
@@ -492,16 +522,25 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
       const i = Math.round((r.ts - first) / step)
       if (i >= 0 && i < buckets) share[i] = Math.min(1, (r.minutes! * 60) / step)
     }
-    const count = Math.min(slicesMax, buckets)
+    const [from, to] = resourceWindow
+    const count = Math.max(1, Math.min(slicesMax, Math.round((to - from) / 1_000 / step)))
+    // The bucket a moment falls in, by its start.
+    const at = (ms: number) => (ms / 1_000 - first) / step
     const slices = Array.from({ length: count }, (_, s) => {
-      const from = Math.floor((s * buckets) / count)
-      const to = Math.max(from + 1, Math.floor(((s + 1) * buckets) / count))
+      const a = from + ((to - from) * s) / count
+      const b = from + ((to - from) * (s + 1)) / count
+      let lo = Math.ceil(at(a) - 1e-9)
+      let hi = Math.ceil(at(b) - 1e-9)
+      // A slice narrower than a bucket takes the one it lies in.
+      if (hi <= lo) [lo, hi] = [Math.floor(at((a + b) / 2)), Math.floor(at((a + b) / 2)) + 1]
+      lo = Math.max(0, lo)
+      hi = Math.min(buckets, hi)
       let sum = 0
-      for (let i = from; i < to; i++) sum += share[i]
-      return { up: sum / (to - from), from: (first + from * step) * 1_000, to: (first + to * step) * 1_000 }
+      for (let i = lo; i < hi; i++) sum += share[i]
+      return { up: hi > lo ? sum / (hi - lo) : null, from: a, to: b }
     })
     return { up: share.reduce((sum, v) => sum + v, 0) / buckets, slices }
-  }, [data, step, node.online, gone, slicesMax])
+  }, [data, step, node.online, gone, slicesMax, resourceWindow])
 
   const shownProbes = useMemo(
     () => pingSeries.filter((s) => !hiddenProbes.includes(s.id)),
@@ -579,8 +618,10 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
   // The chips' swatches follow the lines: dashed only where the lines are.
   const denseProbes = useMemo(() => isDense(pingRows, latencyWindow, plot), [pingRows, latencyWindow, plot])
 
-  const staging = tab === "resources" && !failed && !!data && data.metrics.length > 0 && drawnRows !== chartRows
-  const dim = !!data && (stale || drawing || painted !== shownKey || staging)
+  const staging = tab === "resources" && !failed && !!data && data.metrics.length > 0 && drawnStage !== shownKey
+  // Dimmed for a new node, range, tab or retry only: the key is the same
+  // across a refresh, which is redrawn in place.
+  const dim = !!data && (stale || painted !== shownKey || staging)
 
   const days = daysLeft(node)
   const worth = price ? remaining(node, days) : null
@@ -594,6 +635,25 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
   }
   const billedIn = node.currency.toUpperCase()
   const used = monthUsage(node)
+  const expired = days !== null && days < 0
+  // The renewal line in parts, each kept whole on a line of its own: wrapped
+  // anywhere, "到期" broke across two lines. A part after full-width
+  // punctuation is set off by "· " alone, as "）" carries its own space.
+  const renewal: { text: string; tone?: string }[] = [
+    ...(price
+      ? node.price > 0
+        ? [
+            { text: `${money(node.price, node.currency)} / ${cycle(node.billing_cycle)}` },
+            ...(billedIn === "CNY" || billedIn === "USD" ? [] : [{ text: `（≈ ${both(node.price)}）` }]),
+          ]
+        : [{ text: "免费" }]
+      : []),
+    !node.expires_at
+      ? { text: FOREVER }
+      : expired
+        ? { text: `${node.expires_at} 已过期 ${-days} 天`, tone: "text-warn" }
+        : { text: `${node.expires_at} 到期` },
+  ]
 
   return (
     <div className="space-y-4">
@@ -647,19 +707,24 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
       <Facts title={price ? "费用" : "到期"}>
         <Fact
           label={price ? "续费" : "到期"}
-          value={[
-            price
-              ? node.price > 0
-                ? `${money(node.price, node.currency)} / ${cycle(node.billing_cycle)}`
-                  + (billedIn === "CNY" || billedIn === "USD" ? "" : `（≈ ${both(node.price)}）`)
-                : "免费"
-              : "",
-            node.expires_at ? `${node.expires_at} 到期` : FOREVER,
-          ].filter(Boolean).join(" · ")}
+          value={renewal.map((part, i) => (
+            <span key={i}>
+              {i > 0 && (part.text.startsWith("（") ? "" : renewal[i - 1].text.endsWith("）") ? "· " : " · ")}
+              <span className={`whitespace-nowrap ${part.tone ?? ""}`}>{part.text}</span>
+            </span>
+          ))}
         />
+        {/* Said when the term runs out today or has run out, rather than the
+            line going without a word: what is left of such a plan is nothing. */}
         <Fact
           label="剩余价值"
-          value={worth === null ? null : `${both(worth)} · 剩 ${days} 天`}
+          value={
+            worth !== null ? (
+              `${both(worth)} · 剩 ${days} 天`
+            ) : price && days !== null && days <= 0 && node.price > 0 ? (
+              <span className="text-warn">{days === 0 ? "今天到期" : `已过期 ${-days} 天`}</span>
+            ) : null
+          }
         />
       </Facts>
       </div>
@@ -677,13 +742,37 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
           the ranges smaller pills beneath -- drawn alike, the two rows read as
           one control wrapped onto a second line. */}
       <div ref={area} className="space-y-3 border-t pt-3">
-        <div role="tablist" aria-label="图表" className="flex gap-5 border-b">
+        {/* A tablist as the pattern has it: one tab stop, the arrows, Home and
+            End moving between the tabs and choosing as they go. */}
+        <div
+          role="tablist"
+          aria-label="图表"
+          className="flex gap-5 border-b"
+          onKeyDown={(e) => {
+            const at = TABS.findIndex((t) => t.key === tab)
+            const to =
+              e.key === "ArrowRight" ? (at + 1) % TABS.length
+              : e.key === "ArrowLeft" ? (at + TABS.length - 1) % TABS.length
+              : e.key === "Home" ? 0
+              : e.key === "End" ? TABS.length - 1
+              : -1
+            if (to < 0) return
+            e.preventDefault()
+            setTab(TABS[to].key)
+            // Without scrolling: the next tab is in the row the reader is on,
+            // and focus's own scroll moved the page 21 px at its foot.
+            document.getElementById(`node-tab-${TABS[to].key}`)?.focus({ preventScroll: true })
+          }}
+        >
           {TABS.map((t) => (
             <button
               key={t.key}
+              id={`node-tab-${t.key}`}
               type="button"
               role="tab"
               aria-selected={tab === t.key}
+              aria-controls="node-tabpanel"
+              tabIndex={tab === t.key ? 0 : -1}
               onClick={() => setTab(t.key)}
               className={`-mb-px inline-flex min-h-9 items-center border-b-2 px-0.5 text-sm transition-colors sm:min-h-8 ${RING} ${
                 tab === t.key
@@ -739,12 +828,21 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
               削峰
             </button>
           )}
+          {/* The latency chart's zoom, when there is one: its span and the
+              button that resets it, here rather than over the plot. */}
+          {tab === "latency" && <span ref={setZoomSlot} className="contents" />}
         </div>
       </div>
 
       {/* The floor is held by an outer box and measured on an inner one, which
           is the content's own height. */}
-      <div ref={region} style={minHeight ? { minHeight } : undefined}>
+      <div
+        ref={region}
+        id="node-tabpanel"
+        role="tabpanel"
+        aria-labelledby={`node-tab-${tab}`}
+        style={minHeight ? { minHeight } : undefined}
+      >
       <div ref={content}>
         {!data ? (
           tab === "latency" ? (
@@ -794,6 +892,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
                         spread={spread}
                         smooth={smooth}
                         hours={shownHours}
+                        controls={zoomSlot}
                       />
                     )}
                   </div>
@@ -840,6 +939,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
                 rows={chartRows}
                 window={resourceWindow}
                 plot={plot}
+                widePlot={widePlot}
                 narrow={narrow}
                 solo={solo}
                 axes={axes}
@@ -850,7 +950,8 @@ export function NodeDetail({ node, historyDays, price, rates, primary }: {
                 memTotal={node.mem_total}
                 swapTotal={node.swap_total}
                 diskTotal={node.disk_total}
-                onDrawn={setDrawnRows}
+                stage={shownKey}
+                onDrawn={setDrawnStage}
               />
             )}
           </div>

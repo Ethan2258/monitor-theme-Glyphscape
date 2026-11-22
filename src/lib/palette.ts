@@ -14,6 +14,11 @@ import { hush } from "@/lib/still"
  * and the toggle drops a stone in it. Switching again mid-way turns round from
  * where it has got to.
  *
+ * On phones and touch screens the blend is too dear: every frame restyles the
+ * whole page (about 8 fps on a mid-range phone). There the page switches at once
+ * under a snapshot of how it looked, and the snapshot fades away -- opacity only,
+ * on the compositor -- over the same time and ease (`.palette-swap`, index.css).
+ *
  * With reduced motion it switches at once.
  */
 
@@ -27,23 +32,51 @@ type Point = { x: number; y: number }
 
 let fading: ReturnType<typeof setTimeout> | undefined
 
+// Where the token blend costs too much: a coarse pointer or a phone's width.
+const slight = matchMedia("(pointer: coarse), (max-width: 767px)")
+
+/** Switches `toggle` in at once, everything held still. */
+function atOnce(toggle: () => void) {
+  clearTimeout(fading)
+  root.classList.remove("palette-fade")
+  const hold = document.createElement("style")
+  hold.textContent = "*,*::before,*::after{transition:none!important}"
+  document.head.append(hold)
+  toggle()
+  void document.body.offsetWidth
+  hold.remove()
+}
+
+/**
+ * The phone's way: `toggle` applied at once inside a view transition, so the
+ * old page fades out over the new one. False where it does not apply, and the
+ * caller blends instead.
+ */
+function crossFade(toggle: () => void): boolean {
+  if (!slight.matches || typeof document.startViewTransition !== "function") return false
+  root.classList.add("palette-swap")
+  const swap = document.startViewTransition(() => atOnce(toggle))
+  void swap.finished.finally(() => root.classList.remove("palette-swap"))
+  return true
+}
+
 /** Switches the palette: blended over FADE when `animate`, otherwise at once. */
 export function applyPalette(dark: boolean, animate = false) {
   // Already there (the page following a change it has just made): nothing to do.
   if (root.classList.contains("dark") === dark) return
   const blend = animate && !reduced.matches
+  const toggle = () => root.classList.toggle("dark", dark)
+  // The snapshot fades on its own; the scenes then switch at once beneath it.
+  if (blend && crossFade(() => {
+    setPondTheme(dark, 0)
+    setRealmTheme(dark, 0)
+    toggle()
+  })) return
   setPondTheme(dark, blend ? FADE : 0)
   setRealmTheme(dark, blend ? FADE : 0)
   if (!blend) {
     // At once: every transition held, so nothing fades on its own.
-    clearTimeout(fading)
-    root.classList.remove("palette-fade")
-    const hold = document.createElement("style")
-    hold.textContent = "*,*::before,*::after{transition:none!important}"
-    document.head.append(hold)
-    root.classList.toggle("dark", dark)
-    void document.body.offsetWidth
-    hold.remove()
+    atOnce(toggle)
     return
   }
   // The root's transition carries the tokens (index.css, `.palette-fade`).
@@ -65,6 +98,7 @@ export function applyScene(wraith: boolean, animate = false) {
     return
   }
   hush(FADE + 80)
+  if (crossFade(() => root.classList.toggle("wraith", wraith))) return
   root.classList.add("palette-fade")
   root.classList.toggle("wraith", wraith)
   clearTimeout(fading)

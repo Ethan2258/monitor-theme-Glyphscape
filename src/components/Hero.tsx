@@ -24,12 +24,12 @@ function Figure({ text, className }: { text: string; className?: string }) {
  */
 function Wake({ ids }: { ids: number[] }) {
   const history = throughput(ids)
-  // Until a few pushes have come in, three points would draw as a jagged step:
-  // a dotted level line says the line is being recorded instead.
-  if (history.length < 6) {
+  // A line needs two points, which the second push brings, four seconds in.
+  // Until then a dotted level line says the line is being recorded.
+  if (history.length < 2) {
     return (
       <div className="mt-4">
-        <div className="flex h-8 items-end sm:h-14">
+        <div className="flex h-10 items-end sm:h-14">
           <div className="w-full border-t border-dashed border-muted-foreground/40" />
         </div>
         <div className="mt-1 text-[11px] text-muted-foreground">正在记录最近两分钟的网速…</div>
@@ -37,10 +37,16 @@ function Wake({ ids }: { ids: number[] }) {
     )
   }
   const top = Math.max(...history.flatMap((s) => [s.rx, s.tx]), 1)
-  const width = history.length - 1
+  // Each push has its slot on the two-minute axis, the newest at 现在, so a
+  // line of a few points starts part-way across rather than stretching a few
+  // seconds over the whole two minutes. SLOTS is the number of pushes api.ts
+  // keeps (KEEP there).
+  const SLOTS = 60
+  const step = 100 / (SLOTS - 1)
+  const start = 100 - (history.length - 1) * step
   type P = [number, number][]
   const points = (pick: (s: { rx: number; tx: number }) => number): P =>
-    history.map((s, x) => [(x / width) * 100, 38 - (pick(s) / top) * 34])
+    history.map((s, x) => [start + x * step, 38 - (pick(s) / top) * 34])
   // Through every point, as a Catmull-Rom spline turned to cubic Béziers,
   // with each control point held within the band so the curve never dips
   // below zero or overshoots the peak between two samples.
@@ -55,11 +61,11 @@ function Wake({ ids }: { ids: number[] }) {
     }
     return d
   }
-  const area = (p: P) => `${curve(p)} L100,40 L0,40 Z`
+  const area = (p: P) => `${curve(p)} L100,40 L${p[0][0]},40 Z`
   const rx = points((s) => s.rx), tx = points((s) => s.tx)
   return (
     <div className="mt-4">
-      <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="h-14 w-full" aria-hidden>
+      <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="h-10 w-full sm:h-14" aria-hidden>
         <defs>
           <linearGradient id="wake-rx" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="var(--rx)" stopOpacity="0.28" />
@@ -94,7 +100,7 @@ function Stat({ label, children, foot, wide = false, className }: { label: strin
     // `wide` takes a share and a half, for a figure that is two figures.
     <div className={cn("min-w-0 sm:min-w-[8.5rem] sm:border-l sm:pl-5 sm:first:border-l-0 sm:first:pl-0", wide ? "col-span-2 sm:flex-[1.5]" : "sm:flex-1", className)}>
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1.5 text-lg/tight font-medium">{children}</dd>
+      <dd className="mt-1 text-lg/tight font-medium sm:mt-1.5">{children}</dd>
       {foot && <dd className="tnum mt-1 truncate text-xs text-muted-foreground">{foot}</dd>}
     </div>
   )
@@ -183,7 +189,7 @@ function Overview({ nodes, cost, rates, primary, onOpen }: {
         )}
       </p>
 
-      <div className="mt-7 flex flex-wrap gap-x-12 gap-y-4">
+      <div className="mt-5 flex flex-wrap gap-x-12 gap-y-4 sm:mt-7">
         {[
           { label: "下行", value: now.rx, Icon: InIcon, tone: "text-rx" },
           { label: "上行", value: now.tx, Icon: OutIcon, tone: "text-tx" },
@@ -193,13 +199,15 @@ function Overview({ nodes, cost, rates, primary, onOpen }: {
               <Icon className={cn("size-3.5", tone)} />
               实时{label}
             </div>
-            <Figure text={rate(value)} className="mt-1.5 block text-4xl/none font-medium tracking-tight sm:text-5xl/none" />
+            <Figure text={rate(value)} className="mt-1.5 block text-3xl/none font-medium tracking-tight sm:text-5xl/none" />
           </div>
         ))}
       </div>
       <Wake ids={nodes.map((n) => n.id)} />
 
-      <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-6 border-t pt-6 sm:flex sm:flex-wrap">
+      {/* Tighter on a phone, where the overview, the globe and the chips all
+          come before the first card. */}
+      <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 border-t pt-5 sm:mt-6 sm:flex sm:flex-wrap sm:gap-y-6 sm:pt-6">
         <Stat wide label="今日流量" foot={`累计 ↓${bytes(add((n) => n.total_rx))} ↑${bytes(add((n) => n.total_tx))}`}>
           <span className="tnum whitespace-nowrap">↓ {bytes(add((n) => n.day_rx))}</span>
           <span className="tnum ml-3 whitespace-nowrap text-muted-foreground">↑ {bytes(add((n) => n.day_tx))}</span>
@@ -275,7 +283,17 @@ export function Hero({ nodes, scope, region, onRegion, onOpen, summary, globe, c
   return (
     <section
       className={cn(
-        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-16 gap-y-10 px-4 pt-4 pb-16 sm:px-6 lg:pt-6 lg:pb-16 transition-[padding] duration-[560ms] ease-[cubic-bezier(0.37,0,0.63,1)] [.isolate:has(>.realm:not([hidden]))_&]:pb-36 lg:[.isolate:has(>.realm:not([hidden]))_&]:pb-40",
+        // One bottom padding for both scenes: room for the realm's graveyard
+        // under the globe, and open water below the figures for the pond.
+        // Switching scene then moves nothing on the page, where a padding
+        // eased between two values laid the whole list out again on every
+        // frame of the switch. 144px from lg: the graves stand up to an
+        // eighth of the head's height above its horizon, and at 1024, where
+        // the stats wrap onto a second row, 128px left the exchange-rate line
+        // standing on the first gravestone. Less on a phone, whose graveyard
+        // is a third the height and where every pixel puts the first card
+        // further down.
+        "relative mx-auto grid w-full max-w-[1320px] items-center gap-x-16 gap-y-6 px-4 pt-4 pb-20 sm:gap-y-10 sm:px-6 sm:pb-28 lg:pt-6 lg:pb-36",
         summary && showGlobe && "lg:grid-cols-[minmax(0,1fr)_auto]",
       )}
     >

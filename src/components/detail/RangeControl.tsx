@@ -10,6 +10,12 @@ const MIN_SHARE = 0.02
 
 type Mode = "from" | "to" | "move"
 
+// What a screen reader announces for a handle: the date and time in words,
+// "11月20日 14:32", whatever the window. Its value is an epoch in milliseconds,
+// which read aloud is a thirteen-digit number, and the axis's own "14:32"
+// leaves out the day on a window of a day.
+const SPOKEN = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })
+
 /** `r` moved by `dt` in `mode`, held within `[w0, w1]` and no narrower than `min`. */
 function shift([a, b]: Range, mode: Mode, dt: number, [w0, w1]: Range, min: number): Range {
   if (mode === "from") return [Math.min(Math.max(a + dt, w0), b - min), b]
@@ -120,7 +126,7 @@ export function RangeControl({ window, value, onChange, label, inset }: {
       aria-valuemin={w0}
       aria-valuemax={w1}
       aria-valuenow={Math.round(ts)}
-      aria-valuetext={label(ts)}
+      aria-valuetext={SPOKEN.format(ts)}
       title={`${name} · ${label(ts)}`}
       onPointerDown={grab(mode)}
       {...pointer}

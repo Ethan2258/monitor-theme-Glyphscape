@@ -592,6 +592,13 @@ const DEFAULTS = {
   onFrame: null,
   /** A Pond from an earlier mount (instance.pond) to carry on with, instead of seeding a new one. */
   pond: null,
+  // [patch] The three options below are this theme's, not upstream's (see README.md).
+  /** [patch] Most frames drawn a second; 0 for every display frame. */
+  fps: 0,
+  /** [patch] Highest device pixel ratio drawn at, or a function returning it, read on each resize. */
+  maxDpr: 2,
+  /** [patch] false: no re-measuring on scroll or every 30 frames; the host calls measure() itself. */
+  autoMeasure: true,
 };
 
 function resolveSpecies(entry) {
@@ -664,7 +671,9 @@ export function mount(target, options = {}) {
   function resize() {
     const rect = canvas.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) return;
-    renderer.resize(rect.width, rect.height, Math.min(window.devicePixelRatio || 1, 2));
+    // [patch] The cap is an option: a phone draws the pond at 1x.
+    const cap = typeof o.maxDpr === "function" ? o.maxDpr() : o.maxDpr;
+    renderer.resize(rect.width, rect.height, Math.min(window.devicePixelRatio || 1, cap));
     pond.resize(rect.width, rect.height);
     measure();
   }
@@ -707,10 +716,18 @@ export function mount(target, options = {}) {
   const onOsTheme = () => { if (themeMode === "auto") renderer.setTheme(prefersLight.matches); };
 
   let last = performance.now(), acc = 0, wakeAcc = 0, measured = 0, running = true, stale = false, inView = true;
+  // [patch] When the last frame was drawn, for the `fps` cap, and the pending frame, so it can be cancelled.
+  let drawnAt = 0, raf = 0;
   // Copy moves under a fixed pond on scroll: re-measure on the next frame, not the next periodic one.
   const onScroll = () => { stale = true; };
-  // An embedded pond scrolled out of sight keeps swimming but isn't drawn or measured; back in view, it re-measures.
-  const sight = new IntersectionObserver(([e]) => { inView = e.isIntersecting; stale ||= inView; });
+  // [patch] Scrolled out of sight, an embedded pond stops altogether -- no stepping, no drawing, no
+  // frame requested -- and carries on from where it was when it comes back, re-measuring then.
+  // Upstream kept the fish swimming unseen.
+  const sight = new IntersectionObserver(([e]) => {
+    inView = e.isIntersecting;
+    stale ||= inView;
+    if (inView && running && !raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  });
   const instance = {
     pond, renderer, canvas,
     feed: (x, y) => pond.feed(x, y),
@@ -723,6 +740,7 @@ export function mount(target, options = {}) {
     },
     destroy() {
       running = false;
+      cancelAnimationFrame(raf); // [patch]
       observer.disconnect();
       sight.disconnect();
       removeEventListener("pointermove", onMove);
@@ -736,7 +754,15 @@ export function mount(target, options = {}) {
   };
 
   function frame(now) {
+    raf = 0; // [patch]
     if (!running) return;
+    // [patch] Out of view: stop until the observer above starts it again.
+    if (!inView) return;
+    // [patch] Capped at `fps`: a frame that comes too soon after the last one drawn is skipped,
+    // and the time carries over to the next. 2 ms of slack, so a 60 Hz display, whose frames land
+    // a little either side of 33.3 ms apart, keeps an even 30 rather than dropping to 20.
+    if (o.fps > 0 && now - drawnAt < 1000 / o.fps - 2) { raf = requestAnimationFrame(frame); return; }
+    drawnAt = now;
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     // Reduced motion keeps the pond alive but at a fifth of the speed.
@@ -749,25 +775,27 @@ export function mount(target, options = {}) {
       if (renderer.energy) { renderer.depositWake(pond); renderer.diffuse(WAKE_STEP); }
     }
     if (inView) {
-      if (++measured % MEASURE_EVERY_FRAMES === 0 || stale) { stale = false; measure(); }
+      // [patch] With autoMeasure off only the return into view re-measures here.
+      if ((o.autoMeasure && ++measured % MEASURE_EVERY_FRAMES === 0) || stale) { stale = false; measure(); }
       renderer.render(pond);
     }
     o.onFrame?.(instance);
-    requestAnimationFrame(frame);
+    raf = requestAnimationFrame(frame); // [patch] kept, to cancel
   }
 
   addEventListener("pointermove", onMove, { passive: true });
   addEventListener("click", onClick);
   addEventListener("blur", calm);
   // Capture: scroll doesn't bubble, and inner scrolling panes move copy too.
-  addEventListener("scroll", onScroll, { passive: true, capture: true });
+  // [patch] Only with autoMeasure: a pond that scrolls with the page never moves against its copy.
+  if (o.autoMeasure) addEventListener("scroll", onScroll, { passive: true, capture: true });
   document.documentElement.addEventListener("pointerleave", calm);
   prefersLight.addEventListener("change", onOsTheme);
   const observer = new ResizeObserver(resize);
   observer.observe(canvas);
   sight.observe(canvas);
   resize();
-  requestAnimationFrame(frame);
+  raf = requestAnimationFrame(frame); // [patch] kept, to cancel
   return instance;
 }
 

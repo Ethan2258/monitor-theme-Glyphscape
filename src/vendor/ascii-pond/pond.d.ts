@@ -1,6 +1,6 @@
 // Types for the parts of ascii-pond this theme touches. The engine itself is
-// vendored unchanged from https://github.com/stqfdyr/ascii-pond (see README.md
-// beside this file); these declarations are this theme's.
+// vendored from https://github.com/stqfdyr/ascii-pond with the [patch] changes
+// listed in README.md beside this file; these declarations are this theme's.
 
 export type Rgb = [number, number, number]
 
@@ -53,6 +53,12 @@ export type MountOptions = {
   palette?: { dark?: Partial<Palette>; light?: Partial<Palette> }
   onFrame?: ((instance: PondInstance) => void) | null
   pond?: Pond | null
+  /** [patch] Most frames drawn a second; 0 for every display frame. */
+  fps?: number
+  /** [patch] Highest device pixel ratio drawn at (default 2), or a function read on each resize. */
+  maxDpr?: number | (() => number)
+  /** [patch] false: no re-measuring on scroll or every 30 frames; the host calls measure(). */
+  autoMeasure?: boolean
 }
 
 export type PondInstance = {

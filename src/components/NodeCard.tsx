@@ -290,8 +290,18 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
       // OS line below does not wrap, so on a phone the card would grow past its
       // column and scroll the page sideways. The truncate inside only takes effect
       // once the card is allowed to be narrower.
+      //
+      // content-visibility: a push re-renders every card whose figures moved,
+      // and on a phone styling and laying out the thirty cards below the fold
+      // took most of each push's frame. Off screen the browser now skips them,
+      // holding each at its last measured height (330px until it has one), so
+      // the scrollbar does not jump as they come into view.
+      //
+      // Focus is a ring rather than the 1px outline every element gets, which
+      // was lost against the card's own border.
       className={cn(
-        "min-w-0 cursor-pointer gap-0 p-4 transition-colors hover:border-ring",
+        "min-w-0 cursor-pointer gap-0 p-4 transition-colors outline-none hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "[content-visibility:auto] [contain-intrinsic-block-size:auto_330px]",
         // Gone quiet: a red edge and a faint red wash, so it is found at a glance
         // in a grid of live ones.
         !node.online && deployed(node) && "border-hot/40 bg-[color-mix(in_srgb,var(--hot)_5%,var(--card))]",
@@ -331,10 +341,12 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
           the live figures blank beats a stretched card with one line in it. */}
       {deployed(node) ? (
         <div className="flex flex-1 flex-col">
-          {/* The last figures it reported, faded. The badge already says it is
-              offline, and the card's red edge marks it; a label set over the
-              figures would hide the very ones still worth reading. */}
-          <div className={cn("flex flex-1 flex-col", !node.online && "opacity-35")}>
+          {/* The last figures it reported, set in the quieter ink with their
+              bars faded. The badge already says it is offline, and the card's
+              red edge marks it; a label set over the figures would hide the
+              very ones still worth reading. Only the bars fade: fading the
+              text as well left it near 2:1 against the card, too faint to read. */}
+          <div className={cn("flex flex-1 flex-col", !node.online && "text-muted-foreground [&_.bg-muted]:opacity-40")}>
           <div className="mt-4 mb-4 grid grid-cols-2 gap-x-4 gap-y-4">
             {/* The core count belongs beside the word CPU: it is what the
                 percentage and the load averages are both measured against. */}
@@ -409,7 +421,11 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
  */
 export function NodeHead({ node, onBack }: { node: Node; onBack: () => void }) {
   return (
-    <section data-pond-avoid="" data-pond-dim="box" data-sky-dim="" className="relative mx-auto w-full max-w-[1320px] px-4 pt-2 pb-10 transition-[padding] duration-[560ms] ease-[cubic-bezier(.37,0,.63,1)] sm:px-6 lg:pt-4 lg:pb-12 [.isolate:has(>.realm)_&]:pb-32 lg:[.isolate:has(>.realm)_&]:pb-36">
+    // One bottom padding for both scenes, room for the realm's graveyard under
+    // the name and open water for the pond: switching scene then moves nothing
+    // below it, where a padding eased between two values laid the page out
+    // again on every frame of the switch.
+    <section data-pond-avoid="" data-pond-dim="box" data-sky-dim="" className="relative mx-auto w-full max-w-[1320px] px-4 pt-2 pb-24 sm:px-6 lg:pt-4 lg:pb-28">
       <button onClick={onBack} className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
         <BackIcon className="size-4" /> 全部节点
       </button>

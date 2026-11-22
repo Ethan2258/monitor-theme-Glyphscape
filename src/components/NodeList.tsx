@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react"
+
 import { NodeCard } from "@/components/NodeCard"
 import { NodeTable } from "@/components/NodeTable"
 import { Toolbar, type View } from "@/components/Toolbar"
@@ -5,6 +7,24 @@ import type { Node } from "@/lib/api"
 import type { Rates } from "@/lib/cost"
 import { NO_FILTERS, STATUSES, type Filters, type Status } from "@/lib/filter"
 import { cn } from "@/lib/utils"
+
+// The table needs a laptop's width; below it the table view falls back to cards.
+const WIDE = matchMedia("(min-width: 1024px)")
+
+/**
+ * Whether the window is wide enough for the table. Read in script rather than
+ * left to CSS: hiding the view not in use with `hidden lg:block` kept both
+ * mounted, and every push re-rendered thirty cards nobody could see.
+ */
+function useWide() {
+  return useSyncExternalStore(
+    (notify) => {
+      WIDE.addEventListener("change", notify)
+      return () => WIDE.removeEventListener("change", notify)
+    },
+    () => WIDE.matches,
+  )
+}
 
 /**
  * The nodes, on the paper below the pond: a heading row -- the count, the group
@@ -47,6 +67,7 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
   // Whether the cards keep a line for the operator's remark: on all of them if
   // any shown has one, so the rows line up, and on none otherwise.
   const remarks = shown.some((n) => n.public_remark)
+  const wide = useWide()
 
   return (
     <>
@@ -129,19 +150,12 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
             </button>
           )}
         </p>
-      ) : view === "table" ? (
-        // onOpen goes to every card as it is, never wrapped per card: App keeps it
-        // stable, so a card whose node did not change is skipped on a push.
-        <>
-          <div className="hidden lg:block" onPointerEnter={onPrefetch} onFocus={onPrefetch}>
-            <NodeTable nodes={shown} price={priced} rates={rates} primary={primary} onOpen={onOpen} />
-          </div>
-          <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:hidden" onPointerEnter={onPrefetch} onFocus={onPrefetch}>
-            {shown.map((n) => (
-              <NodeCard key={n.id} node={n} price={priced} remarks={remarks} rates={rates} primary={primary} onOpen={onOpen} />
-            ))}
-          </div>
-        </>
+      ) : view === "table" && wide ? (
+        // onOpen goes to every row as it is, never wrapped per row: App keeps it
+        // stable, so a row whose node did not change is skipped on a push.
+        <div onPointerEnter={onPrefetch} onFocus={onPrefetch}>
+          <NodeTable nodes={shown} price={priced} rates={rates} primary={primary} onOpen={onOpen} />
+        </div>
       ) : (
         <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" onPointerEnter={onPrefetch} onFocus={onPrefetch}>
           {shown.map((n) => (

@@ -1195,7 +1195,10 @@ export function mount(canvas, opts = {}) {
   // the window resizing, or the page around an embedded canvas reflowing.
   let sized = "";
   const resize = () => {
-    const w = canvas.clientWidth, h = canvas.clientHeight, r = Math.min(2, devicePixelRatio || 1);
+    // [patch] The cap is an option (opts.maxDpr, a number or a function read on each resize): a
+    // phone draws the realm at 1x. Upstream always allowed 2x.
+    const cap = typeof opts.maxDpr === "function" ? opts.maxDpr() : opts.maxDpr ?? 2;
+    const w = canvas.clientWidth, h = canvas.clientHeight, r = Math.min(cap, devicePixelRatio || 1);
     if (w < 1 || h < 1 || `${w}x${h}@${r}` === sized) return;
     sized = `${w}x${h}@${r}`;
     layout(w, h, r);
@@ -1272,9 +1275,14 @@ export function mount(canvas, opts = {}) {
     if (frameTimes.length > 120) frameTimes.shift();
   }
   let raf = 0;
+  // [patch] opts.fps caps the frames drawn a second: one that comes too soon after the last drawn is
+  // skipped, its time carried into the next step. 2 ms of slack keeps a 60 Hz display at an even 30.
+  let drawnAt = 0;
   function tick(now) {
     raf = requestAnimationFrame(tick);
     if (!inView) { lastNow = now; return; } // and no catching up on return
+    if (opts.fps > 0 && now - drawnAt < 1000 / opts.fps - 2) return; // [patch]
+    drawnAt = now; // [patch]
     frame(now);
   }
   raf = requestAnimationFrame(tick);

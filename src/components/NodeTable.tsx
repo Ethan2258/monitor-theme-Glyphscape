@@ -87,9 +87,14 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
       tabIndex={0}
       onClick={() => onOpen(n.id)}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(n.id))}
+      // Rows out of view are skipped by the browser on each push, held at
+      // their last measured height (about a row's, 70px, until measured), as
+      // the cards are. Focus is an inset ring as well as the tint, which alone
+      // was too faint to follow from row to row.
       className={cn(
         COLUMNS,
-        "cursor-pointer border-b px-5 py-3 transition-colors last:border-b-0 hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:outline-none",
+        "cursor-pointer border-b px-5 py-3 transition-colors last:border-b-0 hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset",
+        "[content-visibility:auto] [contain-intrinsic-block-size:auto_70px]",
         !n.online && "text-muted-foreground",
       )}
     >

@@ -12,7 +12,10 @@
 /* Paper and ink, after the pond itself: the two page colours are the pond's own
    (`page` in vendor/ascii-pond/pond.js), so its water and the page are one
    surface. One accent, terracotta, for what needs attention and for the nodes on
-   the globe; amber for what will need it soon. Everything else is ink. */
+   the globe; amber for what will need it soon. Everything else is ink.
+   Amber is a step darker than the ochre it was, #9a6b1c, which gave only 4.25:1
+   on the paper, and the offline grey a step darker than #9a958e, whose dot was
+   2.9:1 on a card; now 5.1:1 and 3.3:1. */
 :root {
   color-scheme: light;
   --radius: 0.75rem;
@@ -33,9 +36,9 @@
   --ring: #a39e96;
   --hot: #b84a32;
   --destructive: #b84a32;
-  --warn: #9a6b1c;
+  --warn: #8a5f14;
   --online: #5f8a52;
-  --offline: #9a958e;
+  --offline: #8f8a83;
   /* Charts: ink for one series; sky for what comes in and terracotta for what
      goes out; then ochre, sage and heather for further latency probes, each also
      told apart by its dash. */
@@ -110,7 +113,8 @@
   --ring: #6c7570;
   --hot: #962f2f;
   --destructive: #962f2f;
-  --warn: #6e5210;
+  /* Darker than the #6e5210 it was, which gave 3.9:1 on the grey sky; 4.8:1. */
+  --warn: #5e450c;
   --online: #2f6a4c;
   --offline: #5f6763;
   --ink: #1d2321;
@@ -333,9 +337,9 @@
 @property --ring { syntax: "<color>"; inherits: true; initial-value: #a39e96; }
 @property --hot { syntax: "<color>"; inherits: true; initial-value: #b84a32; }
 @property --destructive { syntax: "<color>"; inherits: true; initial-value: #b84a32; }
-@property --warn { syntax: "<color>"; inherits: true; initial-value: #9a6b1c; }
+@property --warn { syntax: "<color>"; inherits: true; initial-value: #8a5f14; }
 @property --online { syntax: "<color>"; inherits: true; initial-value: #5f8a52; }
-@property --offline { syntax: "<color>"; inherits: true; initial-value: #9a958e; }
+@property --offline { syntax: "<color>"; inherits: true; initial-value: #8f8a83; }
 @property --ink { syntax: "<color>"; inherits: true; initial-value: #3b3936; }
 @property --rx { syntax: "<color>"; inherits: true; initial-value: #4f7ea6; }
 @property --tx { syntax: "<color>"; inherits: true; initial-value: #c8623f; }
@@ -352,7 +356,11 @@
   transition-duration: 560ms;
   transition-timing-function: cubic-bezier(0.37, 0, 0.63, 1);
 }
-:root.palette-fade *:not(:has(> .realm)) {
+/* The one element let off is the head of the page (`scene-band`, App.tsx),
+   whose own transition carries the realm's --muted-foreground step above. It
+   is named by a class: `:not(:has(> .realm))` asked every element on the page
+   about its children on each frame of the blend. */
+:root.palette-fade *:not(.scene-band) {
   transition: none !important;
 }
 
@@ -364,6 +372,14 @@
 ::view-transition-new(root) {
   animation-duration: 160ms;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The palette change on phones (lib/palette.ts): the old page's snapshot fades
+   out over the new one in the blend's own time and ease. */
+:root.palette-swap::view-transition-old(root),
+:root.palette-swap::view-transition-new(root) {
+  animation-duration: 560ms;
+  animation-timing-function: cubic-bezier(0.37, 0, 0.63, 1);
 }
 
 @keyframes menu-in {

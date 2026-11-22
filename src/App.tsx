@@ -15,6 +15,8 @@ import { api, useNodes } from "@/lib/api"
 import { cachedConfig, DEFAULTS, loadConfig, type Config } from "@/lib/config"
 import { isSortKey, narrow, NO_FILTERS, type Filters } from "@/lib/filter"
 import { applyPalette, applyScene, transitionPalette } from "@/lib/palette"
+import { preloadPond } from "@/lib/pond"
+import { preloadRealm } from "@/lib/realm"
 import { useRates } from "@/lib/rates"
 
 const WRAITH_ICON =
@@ -281,9 +283,13 @@ export default function App() {
     loadMe()
     // Requested alongside /me, not after it. It never rejects.
     void loadConfig().then(setConfig)
+    // Once the page is up: the node page, the panel, and both scene engines,
+    // so neither a click on a card nor a switch of scene waits on the network.
     const runIdle = () => {
       void loadDetail()
       preloadAdmin()
+      preloadPond()
+      preloadRealm()
     }
     if (typeof requestIdleCallback === "function") {
       const id = requestIdleCallback(runIdle, { timeout: 1500 })
@@ -340,9 +346,29 @@ export default function App() {
 
   return (
     <div className="flex min-h-svh flex-col">
+      {/* For the keyboard: past the header, the overview and the globe's
+          chips, straight to the nodes. Out of sight until focused, then
+          shown at the top left over everything. */}
+      {open === null && (
+        <a
+          href="#nodes"
+          onClick={(e) => {
+            // Focus, not only the scroll a fragment gives: the next Tab then
+            // carries on from the list rather than from the top.
+            e.preventDefault()
+            const list = document.getElementById("nodes")
+            list?.focus({ preventScroll: true })
+            list?.scrollIntoView({ block: "start" })
+          }}
+          className="sr-only rounded-full border bg-popover px-4 py-2 text-sm shadow-sm outline-none focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          跳到节点列表
+        </a>
+      )}
       {/* The head of the page, with its scene behind it: the header, then the
-          overview or a node's name. */}
-      <div ref={headRef} className="relative isolate">
+          overview or a node's name. `scene-band` marks it for index.css, which
+          lets this one element keep its transition during a palette blend. */}
+      <div ref={headRef} className="scene-band relative isolate">
         <SceneStage hostRef={headRef} scene={activeScene} feed={config.pond_feed} fish={config.pond_fish} />
         <header className="relative z-20 mx-auto flex w-full max-w-[1320px] items-center gap-1 px-4 py-4 sm:px-6">
           {/* The site name is the way back to the list. The icon follows the
@@ -404,7 +430,8 @@ export default function App() {
         )}
       </div>
 
-      <main className="mx-auto w-full max-w-[1320px] flex-1 space-y-5 px-4 pb-10 sm:px-6">
+      {/* `nodes`: where the skip link lands; focusable by script only. */}
+      <main id="nodes" tabIndex={-1} className="mx-auto w-full max-w-[1320px] flex-1 scroll-mt-4 space-y-5 px-4 pb-10 outline-none sm:px-6">
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {open !== null ? (
