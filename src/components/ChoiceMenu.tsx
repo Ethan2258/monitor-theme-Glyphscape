@@ -43,14 +43,24 @@ export function ChoiceMenu<T extends string>({
   const button = useRef<HTMLButtonElement>(null)
   const menu = useRef<HTMLDivElement>(null)
 
-  // Closed by a press anywhere else.
+  // Closed by a press anywhere else, or Escape even if focus drifted out of the menu.
   useEffect(() => {
     if (!open) return
     const away = (e: PointerEvent) => {
       if (!root.current?.contains(e.target as Node)) setOpen(false)
     }
+    const esc = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      e.preventDefault()
+      setOpen(false)
+      button.current?.focus()
+    }
     addEventListener("pointerdown", away)
-    return () => removeEventListener("pointerdown", away)
+    addEventListener("keydown", esc)
+    return () => {
+      removeEventListener("pointerdown", away)
+      removeEventListener("keydown", esc)
+    }
   }, [open])
 
   // Focus goes into the menu as it opens, onto the choice in force, so the
@@ -91,7 +101,7 @@ export function ChoiceMenu<T extends string>({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={title}
-        data-tip={title}
+        data-tip={open ? undefined : title}
         onClick={() => {
           if (!open) onOpen?.()
           setOpen(!open)
@@ -114,7 +124,7 @@ export function ChoiceMenu<T extends string>({
           aria-label={label}
           onKeyDown={onMenuKey}
           className={cn(
-            "absolute top-[calc(100%+8px)] right-0 z-30 w-40 rounded-xl border bg-popover p-1 shadow-[0_10px_30px_rgb(0_0_0/0.12)]",
+            "absolute top-[calc(100%+8px)] right-0 z-30 max-h-[min(24rem,65svh)] w-40 overflow-y-auto rounded-xl border bg-popover p-1 shadow-[0_10px_30px_rgb(0_0_0/0.12)]",
             menuClassName,
           )}
         >

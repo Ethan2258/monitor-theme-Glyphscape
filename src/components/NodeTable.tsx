@@ -14,7 +14,8 @@ import { cn } from "@/lib/utils"
 // together, with the gaps and padding, come to 75rem: the 1215px a 1280 window
 // leaves the table, so it is whole wherever it is offered, with no sideways
 // scroll cutting off the price column.
-const COLUMNS = "grid grid-cols-[minmax(10rem,2.2fr)_minmax(5.5rem,1fr)_minmax(6rem,1fr)_repeat(2,minmax(5.5rem,1fr))_minmax(6.5rem,1.15fr)_minmax(8rem,1.15fr)_minmax(7.5rem,1.15fr)_minmax(10rem,1.5fr)] items-center gap-x-4"
+const COLUMNS_PING = "grid grid-cols-[minmax(10rem,2.2fr)_minmax(5.5rem,1fr)_minmax(6rem,1fr)_repeat(2,minmax(5.5rem,1fr))_minmax(6.5rem,1.15fr)_minmax(8rem,1.15fr)_minmax(7.5rem,1.15fr)_minmax(10rem,1.5fr)] items-center gap-x-4"
+const COLUMNS_NO_PING = "grid grid-cols-[minmax(12rem,2.4fr)_minmax(5.5rem,1fr)_minmax(6rem,1fr)_repeat(2,minmax(5.5rem,1fr))_minmax(6.5rem,1.15fr)_minmax(7.5rem,1.15fr)_minmax(10rem,1.5fr)] items-center gap-x-4"
 
 /** A percentage over a thin bar: red past nine tenths, like the cards' meters. */
 const Bar = memo(function Bar({ pct, foot }: { pct: number | null; foot?: string }) {
@@ -38,29 +39,31 @@ const Bar = memo(function Bar({ pct, foot }: { pct: number | null; foot?: string
  * and what it costs -- so the two views read alike. Below a laptop's width the
  * table scrolls sideways rather than squeezing its columns.
  */
-export function NodeTable({ nodes, price, rates, primary, onOpen }: {
+export function NodeTable({ nodes, price, ping = true, rates, primary, onOpen }: {
   nodes: Node[]
   price: boolean
+  ping?: boolean
   rates: Rates
   primary: "CNY" | "USD"
   onOpen: OpenNode
 }) {
+  const columns = ping ? COLUMNS_PING : COLUMNS_NO_PING
   return (
     <Card className="gap-0 overflow-x-auto py-0">
-      <div className="min-w-[75rem]">
-        <div className={cn(COLUMNS, "border-b px-5 py-2.5 text-xs text-muted-foreground")}>
+      <div className={ping ? "min-w-[75rem]" : "min-w-[66rem]"}>
+        <div className={cn(columns, "border-b px-5 py-2.5 text-xs text-muted-foreground")}>
           <span>节点</span>
           <span>状态</span>
           <span>CPU</span>
           <span>内存</span>
           <span>硬盘</span>
           <span>网速</span>
-          <span>延迟</span>
+          {ping && <span>延迟</span>}
           <span>本期流量</span>
           <span>{price ? "价格 · 剩余" : "到期"}</span>
         </div>
         {nodes.map((n) => (
-          <Row key={n.id} n={n} price={price} rates={rates} primary={primary} onOpen={onOpen} />
+          <Row key={n.id} n={n} price={price} ping={ping} rates={rates} primary={primary} onOpen={onOpen} />
         ))}
       </div>
     </Card>
@@ -71,9 +74,10 @@ export function NodeTable({ nodes, price, rates, primary, onOpen }: {
  * One node's row. Memoised like the cards: handed the node object a push left
  * unchanged, and the one onOpen for every row, it is skipped outright.
  */
-const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
+const Row = memo(function Row({ n, price, ping, rates, primary, onOpen }: {
   n: Node
   price: boolean
+  ping: boolean
   rates: Rates
   primary: "CNY" | "USD"
   onOpen: OpenNode
@@ -86,6 +90,7 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
   const worth = left === null ? null : convert(left, n.currency, rates)
   const code = n.currency.toUpperCase()
   const billed = n.price > 0 && code !== "CNY" && code !== "USD" ? convert(n.price, code, rates) : null
+  const columns = ping ? COLUMNS_PING : COLUMNS_NO_PING
   return (
     <div
       role="button"
@@ -99,7 +104,7 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
       // the cards are. Focus is an inset ring as well as the tint, which alone
       // was too faint to follow from row to row.
       className={cn(
-        COLUMNS,
+        columns,
         "cursor-pointer border-b px-5 py-3 transition-colors last:border-b-0 hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset",
         "[content-visibility:auto] [contain-intrinsic-block-size:auto_70px]",
         !n.online && "text-muted-foreground",
@@ -108,7 +113,7 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <Country node={n} />
-          <span className="truncate text-sm font-medium" data-tip={n.name}>{n.name}</span>
+          <span className="truncate text-sm font-medium" data-tip={n.name} data-tip-overflow="">{n.name}</span>
         </div>
         <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
           {n.public_remark || [n.virt !== "none" && n.virt, n.arch, n.cpu_cores ? `${n.cpu_cores} 核` : ""].filter(Boolean).join(" · ") || "等待首次上报"}
@@ -130,7 +135,7 @@ const Row = memo(function Row({ n, price, rates, primary, onOpen }: {
         <div className="truncate"><span className="text-rx">↓</span> {m ? rate(m.net_rx) : "—"}</div>
         <div className="mt-0.5 truncate"><span className="text-tx">↑</span> {m ? rate(m.net_tx) : "—"}</div>
       </div>
-      <PingCell id={n.id} onOpen={onOpen} />
+      {ping && <PingCell id={n.id} onOpen={onOpen} />}
       <div className="min-w-0">
         {n.traffic_limit > 0 ? (
           <Bar pct={percent(used, n.traffic_limit)} foot={`${bytes(used)} / ${bytes(n.traffic_limit)}`} />

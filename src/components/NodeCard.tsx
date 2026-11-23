@@ -244,7 +244,7 @@ const CardHead = memo(function CardHead({ node, name, os, virt, arch, days, stat
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1.5">
           <Country node={node} />
-          <h3 className="truncate font-medium @max-[20rem]:text-[14px] @max-[20rem]:tracking-tight" data-tip={name}>{name}</h3>
+          <h3 className="truncate font-medium @max-[20rem]:text-[14px] @max-[20rem]:tracking-tight" data-tip={name} data-tip-overflow="">{name}</h3>
         </div>
         <p className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
           {os && <OsIcon os={os} />}
@@ -335,6 +335,7 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
           // A phone shows one card a row, with no neighbour to line up with.
           className={cn("mt-2 h-4 truncate text-xs text-muted-foreground", !node.public_remark && "max-sm:hidden")}
           data-tip={node.public_remark || undefined}
+          data-tip-overflow=""
           aria-hidden={node.public_remark ? undefined : true}
         >
           {node.public_remark}

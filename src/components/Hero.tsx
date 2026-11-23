@@ -320,7 +320,7 @@ function Overview({ nodes, cost, rates, primary, onOpen }: {
               {next.node.name}
             </button>
           ) : (
-            <span className="block truncate" data-tip={next?.node.name}>{next ? next.node.name : "—"}</span>
+            <span className="block truncate" data-tip={next?.node.name} data-tip-overflow="">{next ? next.node.name : "—"}</span>
           )}
         </Stat>
       </dl>

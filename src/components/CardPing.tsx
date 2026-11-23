@@ -348,13 +348,16 @@ export const PingCell = memo(function PingCell({ id, onOpen }: { id: number; onO
   const entry = useNodePing(id, hours, show && near)
   const lines = probeLines(entry?.data, probes, hours)
   const clickable = !!onOpen && lines.length > 0
+  const cellTip = lines.length
+    ? `${lines.map((l) => `${l.name} ${ms(l.latest)}${l.loss >= 1 ? ` · 丢包 ${l.loss.toFixed(1)} %` : ""}`).join("\n")}${clickable ? "\n点击查看延迟图表" : ""}`
+    : undefined
   return (
     <div
       ref={box}
       role={clickable ? "button" : undefined}
       tabIndex={clickable ? 0 : undefined}
-      // Named, not hinted: a hint here showed in every gap between the rows.
       aria-label={clickable ? "查看网络延迟图表" : undefined}
+      data-tip={cellTip}
       onClick={clickable ? (e) => { e.stopPropagation(); onOpen(id, "latency") } : undefined}
       onKeyDown={clickable ? (e) => {
         if (e.key === "Enter" || e.key === " ") {

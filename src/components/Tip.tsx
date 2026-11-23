@@ -29,7 +29,7 @@ export function TipLayer() {
     box.setAttribute("role", "tooltip")
     box.id = "page-tip"
     box.className =
-      "pointer-events-none fixed top-0 left-0 z-50 max-w-72 rounded-md border bg-popover px-2 py-1 text-xs text-foreground shadow-sm whitespace-pre-line"
+      "pointer-events-none fixed top-0 left-0 z-50 max-w-80 rounded-md border bg-popover px-2 py-1 text-xs text-foreground shadow-sm whitespace-pre-line"
     box.hidden = true
     document.body.append(box)
 
@@ -89,9 +89,18 @@ export function TipLayer() {
       }
     }
 
+    // Elements marked `data-tip-overflow` carry the full text of a truncated
+    // label; when the label fits without clipping, no duplicate hint is shown.
+    const tipOf = (node: Element | null) => {
+      const el = node?.closest?.<HTMLElement>("[data-tip]")
+      if (!el) return null
+      if (el.hasAttribute("data-tip-overflow") && el.scrollWidth <= el.clientWidth + 1) return null
+      return el
+    }
+
     const over = (e: PointerEvent) => {
       if (e.pointerType === "touch") return
-      const el = (e.target as Element | null)?.closest?.<HTMLElement>("[data-tip]")
+      const el = tipOf(e.target as Element | null)
       if (el) want(el)
       else if (target) {
         clearTimeout(timer)
@@ -107,7 +116,9 @@ export function TipLayer() {
     }
     const focus = (e: FocusEvent) => {
       const el = e.target as HTMLElement
-      if (el.dataset?.tip && el.matches(":focus-visible")) want(el)
+      if (el.dataset?.tip && el.matches(":focus-visible") && (!el.hasAttribute("data-tip-overflow") || el.scrollWidth > el.clientWidth + 1)) {
+        want(el)
+      }
     }
     const blur = (e: FocusEvent) => {
       if (e.target === target || e.target === pending) hide()

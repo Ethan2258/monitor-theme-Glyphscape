@@ -1,10 +1,12 @@
 import { useSyncExternalStore } from "react"
 
 import type { OpenNode } from "@/components/CardPing"
+import { Flag } from "@/components/Flag"
 import { NodeCard } from "@/components/NodeCard"
 import { NodeTable } from "@/components/NodeTable"
 import { Toolbar, type View } from "@/components/Toolbar"
 import type { Node } from "@/lib/api"
+import { countryName } from "@/lib/countries"
 import type { Rates } from "@/lib/cost"
 import { NO_FILTERS, STATUSES, type Filters, type Status } from "@/lib/filter"
 import { cn } from "@/lib/utils"
@@ -104,6 +106,20 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
             ))}
           </div>
         )}
+        {/* Active country filter chip, so a reader scrolled past the globe can
+            see and clear the region filter in place. */}
+        {filters.region !== null && (
+          <button
+            type="button"
+            onClick={() => onFilters({ ...filters, region: null })}
+            data-tip="清除地区筛选"
+            className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-foreground/50 bg-secondary px-2.5 text-xs text-foreground transition-colors hover:border-foreground/70 max-sm:h-9 max-sm:px-3"
+          >
+            <Flag code={filters.region} className="h-2.5 w-3.5" />
+            {countryName(filters.region)}
+            <span className="ml-0.5 text-muted-foreground" aria-hidden>×</span>
+          </button>
+        )}
         {/* The chips grow to a fingertip's height on a phone; 28px is enough
             for a pointer, not for a thumb. */}
         {states.length > 0 && (
@@ -158,7 +174,7 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
         // onOpen goes to every row as it is, never wrapped per row: App keeps it
         // stable, so a row whose node did not change is skipped on a push.
         <div onPointerEnter={onPrefetch} onFocus={onPrefetch}>
-          <NodeTable nodes={shown} price={priced} rates={rates} primary={primary} onOpen={onOpen} />
+          <NodeTable nodes={shown} price={priced} ping={ping} rates={rates} primary={primary} onOpen={onOpen} />
         </div>
       ) : (
         <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" onPointerEnter={onPrefetch} onFocus={onPrefetch}>

@@ -261,12 +261,42 @@ export function NodeDetail({ node, historyDays, price, rates, primary, tab: cont
     if (same && cached.failed) return
     // Refreshed every bucket, and at most once a minute, the hub's own rate:
     // fetched only on a change of range, a page left open showed the morning's
-    // history all afternoon.
+    // history all afternoon. Paused while the tab is hidden and caught up on return.
     const every = Math.max(60, cached?.history.step ?? 60) * 1_000
-    const later = (ms: number) => { timer = setTimeout(() => setTick((n) => n + 1), ms) }
+    let onVisible: (() => void) | undefined
+    const cleanup = () => {
+      active = false
+      clearTimeout(timer)
+      if (onVisible) {
+        document.removeEventListener("visibilitychange", onVisible)
+        onVisible = undefined
+      }
+    }
+    const later = (ms: number) => {
+      clearTimeout(timer)
+      if (onVisible) {
+        document.removeEventListener("visibilitychange", onVisible)
+        onVisible = undefined
+      }
+      timer = setTimeout(() => {
+        if (!active) return
+        if (document.hidden) {
+          onVisible = () => {
+            if (!document.hidden && active) {
+              document.removeEventListener("visibilitychange", onVisible!)
+              onVisible = undefined
+              setTick((n) => n + 1)
+            }
+          }
+          document.addEventListener("visibilitychange", onVisible)
+        } else {
+          setTick((n) => n + 1)
+        }
+      }, ms)
+    }
     if (same && Date.now() - cached.at < every) {
       later(cached.at + every - Date.now())
-      return () => clearTimeout(timer)
+      return cleanup
     }
     // A refresh replaces the window in place, undimmed; a failed one keeps
     // what is drawn and tries again at the next bucket.
@@ -307,10 +337,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary, tab: cont
         if (refresh) later(every)
         else settle(EMPTY, e.message)
       })
-    return () => {
-      active = false
-      clearTimeout(timer)
-    }
+    return cleanup
   }, [node.id, hours, tab, attempt, tick])
 
   // What the screen shows, and when it was last painted. The charts stay

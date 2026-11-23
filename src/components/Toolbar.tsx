@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react"
+
 import { ChoiceMenu } from "@/components/ChoiceMenu"
 import { GridIcon, RowsIcon, SearchIcon, SortIcon } from "@/components/icons"
 
@@ -30,20 +32,64 @@ export function Toolbar({ query, sort, view, ping = true, onQuery, onSort, onVie
   // tabs and chips. Narrower, it wraps onto a line of its own, and pushed right
   // there it would hang off the end of an empty line; from the left, it reads
   // as the list's second row of controls.
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return
+      const el = document.activeElement as HTMLElement | null
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return
+      if (document.querySelector('[role="menu"]')) return
+      e.preventDefault()
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+    addEventListener("keydown", onKey)
+    return () => removeEventListener("keydown", onKey)
+  }, [])
   const sorts = SORTS.filter(([key]) => ping || key !== "ping").map(([value, label]) => ({ value, label }))
   const current = sorts.find((s) => s.value === sort)?.label ?? sorts[0].label
   return (
     <div className="flex w-full items-center gap-2 sm:w-auto xl:ml-auto">
-      <label className="relative min-w-0 flex-1 sm:flex-initial">
+      <label className="group/search relative min-w-0 flex-1 sm:flex-initial">
         <span className="sr-only">搜索节点</span>
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <input
-          type="search"
+          ref={inputRef}
+          type="text"
+          inputMode="search"
+          enterKeyHint="search"
           value={query}
           onChange={(e) => onQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Escape") return
+            e.preventDefault()
+            if (query) onQuery("")
+            else inputRef.current?.blur()
+          }}
           placeholder="搜索"
-          className={`${FIELD} w-full pr-2 pl-8 placeholder:text-muted-foreground sm:w-44`}
+          className={`${FIELD} w-full pr-7 pl-8 placeholder:text-muted-foreground sm:w-44`}
         />
+        {query ? (
+          <button
+            type="button"
+            aria-label="清除搜索"
+            data-tip="清除 (Esc)"
+            onClick={() => {
+              onQuery("")
+              inputRef.current?.focus()
+            }}
+            className="absolute top-1/2 right-1.5 inline-flex size-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            ×
+          </button>
+        ) : (
+          <kbd
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded border bg-muted/60 px-1 font-mono text-[10px] leading-4 text-muted-foreground/80 group-focus-within/search:hidden sm:inline-block"
+          >
+            /
+          </kbd>
+        )}
       </label>
       <ChoiceMenu
         label="排序方式"
