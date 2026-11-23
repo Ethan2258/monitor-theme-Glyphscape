@@ -1,14 +1,14 @@
 {
   "name": "monitor-theme-inkpond",
   "private": true,
-  "version": "1.2.27",
+  "version": "1.2.28",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "demo": "vite --mode demo --port 5173 --strictPort",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node src/lib/format.test.ts && node src/lib/api.test.ts && node src/lib/cost.test.ts && node src/lib/globe.test.ts && node src/lib/filter.test.ts",
+    "test": "node src/lib/format.test.ts && node src/lib/api.test.ts && node src/lib/cost.test.ts && node src/lib/globe.test.ts && node src/lib/filter.test.ts && node src/lib/latency.test.ts",
     "preview": "vite preview",
     "land": "node scripts/landmask.mjs",
     "pack": "npm run build && node scripts/pack.mjs"
@@ -16,16 +16,13 @@
   "dependencies": {
     "@fontsource-variable/geist-mono": "^5.3.0",
     "@tailwindcss/vite": "^4.3.3",
-    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "country-flag-icons": "^1.6.20",
     "lucide-react": "^1.76.0",
-    "radix-ui": "^1.6.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "recharts": "^3.11.0",
     "simple-icons": "^16.38.0",
-    "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {

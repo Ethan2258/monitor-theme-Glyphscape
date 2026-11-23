@@ -1,6 +1,7 @@
 import { lazy, startTransition, Suspense, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { flushSync } from "react-dom"
-import { DoorIcon, RippleIcon } from "@/components/icons"
+import { EmptyState } from "@/components/EmptyState"
+import { BackIcon, DoorIcon, RippleIcon, SearchIcon } from "@/components/icons"
 import { SceneMenu, ThemeMenu, type SceneChoice, type ThemeChoice } from "@/components/ThemeMenu"
 
 import { Hero } from "@/components/Hero"
@@ -8,7 +9,6 @@ import { NodeHead } from "@/components/NodeCard"
 import { NodeList } from "@/components/NodeList"
 import { SceneStage } from "@/components/SceneStage"
 import { TipLayer } from "@/components/Tip"
-import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { openAdmin, preloadAdmin, readMeSnapshot, recordMeSnapshot } from "@/lib/admin"
@@ -457,7 +457,7 @@ export default function App() {
   if (!me || !config) return (
     <div className="relative isolate min-h-svh">
       <div className="relative grid min-h-svh place-items-center p-6 text-sm text-muted-foreground">
-        {meError ? <div data-pond-avoid="" data-sky-avoid="" className="space-y-3 text-center"><p role="alert">加载失败：{meError}</p><Button onClick={loadMe}>重试</Button></div> : <span data-pond-avoid="" data-sky-avoid="">加载中…</span>}
+        {meError ? <EmptyState alert title="状态页加载失败" action={{ label: "重试", onClick: loadMe }}>{meError}</EmptyState> : <span data-pond-avoid="" data-sky-avoid="">加载中…</span>}
       </div>
     </div>
   )
@@ -530,7 +530,7 @@ export default function App() {
         {notice && (
           <div className="relative mx-auto w-full max-w-[1320px] px-4 sm:px-6">
             {/* The operator's words to every visitor. Plain text, as typed. */}
-            <Card className="flex-row items-start gap-2.5 px-4 py-3 text-sm">
+            <Card className="items-start gap-2.5 bg-card px-4 py-3 text-sm">
               <RippleIcon className="mt-0.5 size-4 shrink-0 text-marker" />
               <p className="min-w-0 leading-relaxed break-words whitespace-pre-wrap">{notice}</p>
             </Card>
@@ -565,7 +565,7 @@ export default function App() {
           !nodes ? (
             <Skeleton className="h-96" />
           ) : selected ? (
-            <Card className="gap-0 p-4 sm:p-6">
+            <Card className="flex-col bg-card p-4 sm:p-6">
               <Suspense fallback={<Skeleton className="h-[34rem]" />}>
                 <Detail
                   node={selected}
@@ -579,9 +579,11 @@ export default function App() {
               </Suspense>
             </Card>
           ) : (
-            <p className="py-16 text-center text-sm text-muted-foreground">
-              节点不存在或未公开。<button className="underline" onClick={() => go(null)}>返回列表</button>
-            </p>
+            <div className="py-10">
+              <EmptyState icon={SearchIcon} title="找不到这个节点" action={{ label: "返回全部节点", onClick: () => go(null), icon: BackIcon }}>
+                它可能已被删除，或没有设为公开。
+              </EmptyState>
+            </div>
           )
         ) : !nodes || !config ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

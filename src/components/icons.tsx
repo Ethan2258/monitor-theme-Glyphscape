@@ -225,6 +225,17 @@ export const BackIcon = memo(function BackIcon(p: Props) {
   )
 })
 
+/** A server, two units stacked: the list before any node has reported. */
+export const ServerIcon = memo(function ServerIcon(p: Props) {
+  return (
+    <Icon {...p}>
+      <rect x="4.5" y="4.5" width="15" height="6" rx="1.5" />
+      <rect x="4.5" y="13.5" width="15" height="6" rx="1.5" />
+      <path d="M8 7.5h.01M8 16.5h.01" />
+    </Icon>
+  )
+})
+
 /** A small check, for the chosen item of a menu. */
 export const CheckIcon = memo(function CheckIcon(p: Props) {
   return (

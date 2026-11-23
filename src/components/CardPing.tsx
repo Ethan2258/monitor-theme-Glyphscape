@@ -1,6 +1,7 @@
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 
 import { history } from "@/lib/api"
+import { blockTier, MID_MS, SLOW_MS } from "@/lib/latency"
 import { cn } from "@/lib/utils"
 
 /**
@@ -203,22 +204,19 @@ export function probeLines(data: PingData | null | undefined, wanted: string, ho
   })
 }
 
-// Absolute round-trip tiers matching the card's semantic palette: green (<100 ms),
-// amber (100–250 ms), and red (>=250 ms or timeout). Sharp spikes above a fast
-// line's own median step up one tier so jitter on domestic links stays visible.
-const MID_MS = 100
-const SLOW_MS = 250
+// A block's colour and depth (lib/latency.ts), as classes: literal, for
+// Tailwind to find, and the faint end still clear of the empty track's grey.
+const TONES = {
+  ok: ["bg-online/60", "bg-online/85", "bg-online"],
+  warn: ["bg-warn/60", "bg-warn/85", "bg-warn"],
+  hot: ["bg-hot/65", "bg-hot/85", "bg-hot"],
+  timeout: ["bg-hot", "bg-hot", "bg-hot"],
+  none: ["bg-foreground/10", "bg-foreground/10", "bg-foreground/10"],
+} as const
 
 function shade(v: number | null | undefined, typical: number | null): string {
-  if (v === undefined) return "bg-foreground/10"
-  if (v === null) return "bg-hot"
-  if (v >= SLOW_MS) return "bg-hot/75"
-  if (v >= MID_MS) {
-    if (typical && v / typical >= 1.5 && v - typical >= 50) return "bg-hot/75"
-    return "bg-warn/85"
-  }
-  if (typical && v / typical >= 1.8 && v - typical >= 30) return "bg-warn/85"
-  return "bg-online/85"
+  const { tone, depth } = blockTier(v, typical)
+  return TONES[tone][depth]
 }
 
 function latencyTone(v: number | null | undefined): string {
@@ -244,7 +242,7 @@ function hhmm(sec: number): string {
 /** A probe's row: name, strip, latest, loss. */
 function ProbeRow({ line, hours }: { line: ProbeLine; hours: number }) {
   const step = (hours * 3600) / SLOTS
-  const summary = `最近 ${hours} 小时 · 常态 ${line.typical === null ? "—" : ms(line.typical)}${line.loss > 0 ? ` · 丢包 ${line.loss.toFixed(1)} %` : ""}\n绿 <${MID_MS} ms · 黄 ${MID_MS}–${SLOW_MS} ms · 红 ≥${SLOW_MS} ms / 超时`
+  const summary = `最近 ${hours} 小时 · 常态 ${line.typical === null ? "—" : ms(line.typical)}${line.loss > 0 ? ` · 丢包 ${line.loss.toFixed(1)} %` : ""}\n绿 <${MID_MS} ms · 黄 ${MID_MS}–${SLOW_MS} ms · 红 ≥${SLOW_MS} ms / 超时\n颜色越深，比这条线平时越慢`
   return (
     <div className="grid grid-cols-[4.25rem_minmax(0,1fr)_4.75rem] items-center gap-2 text-xs">
       <span className="truncate text-muted-foreground transition-colors group-hover/ping:text-foreground" data-tip={`${line.name} · ${summary}`}>{line.name}</span>
@@ -255,7 +253,7 @@ function ProbeRow({ line, hours }: { line: ProbeLine; hours: number }) {
       <span
         className="-mr-px flex h-2.5 min-w-0"
         role="img"
-        aria-label={`${line.name} 最近 ${hours} 小时延迟，绿顺畅、黄偏高、红较慢或超时`}
+        aria-label={`${line.name} 最近 ${hours} 小时延迟，绿顺畅、黄偏高、红较慢或超时，颜色越深比平时越慢`}
       >
         {line.slots.map((v, i) => (
           <span

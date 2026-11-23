@@ -49,7 +49,7 @@ export function NodeTable({ nodes, price, ping = true, rates, primary, onOpen }:
 }) {
   const columns = ping ? COLUMNS_PING : COLUMNS_NO_PING
   return (
-    <Card className="gap-0 overflow-x-auto py-0">
+    <Card className="flex-col overflow-x-auto bg-card">
       <div className={ping ? "min-w-[75rem]" : "min-w-[66rem]"}>
         <div className={cn(columns, "border-b px-5 py-2.5 text-xs text-muted-foreground")}>
           <span>节点</span>

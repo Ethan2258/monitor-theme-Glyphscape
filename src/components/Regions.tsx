@@ -1,10 +1,20 @@
-import { useMemo, useState, useSyncExternalStore } from "react"
+import { lazy, Suspense, useMemo, useState, useSyncExternalStore } from "react"
 
 import { Flag } from "@/components/Flag"
-import { Globe, type Marker } from "@/components/Globe"
+import type { Marker } from "@/components/Globe"
 import type { Node } from "@/lib/api"
 import { countryName, placeOf } from "@/lib/countries"
 import { cn } from "@/lib/utils"
+
+/**
+ * The globe, and the land it draws, in a file of their own: 21 kB the first
+ * paint does not wait on. Fetched as soon as this module runs, alongside the
+ * page's own first render, so it is usually there before the summary is; until
+ * then an empty square of the globe's own size holds its place.
+ */
+const globeFile = import("@/components/Globe")
+const Globe = lazy(() => globeFile.then((m) => ({ default: m.Globe })))
+const GLOBE_BOX = "mx-auto aspect-square w-full max-w-[9.5rem] sm:max-w-[17rem] lg:max-w-[19rem]"
 
 /** How many countries are listed before the rest fold behind a count. */
 const SHOWN = 8
@@ -70,7 +80,9 @@ export function Regions({ nodes, selected, onPick }: {
 
   return (
     <div data-pond-avoid="" data-sky-ignore="" className="flex min-w-0 flex-col items-center gap-3 sm:gap-4 lg:w-[28.5rem]">
-      <Globe markers={markers} selected={selected} onPick={onPick} />
+      <Suspense fallback={<div className={GLOBE_BOX} aria-hidden />}>
+        <Globe markers={markers} selected={selected} onPick={onPick} />
+      </Suspense>
       {regions.length > 0 && (
         // Below sm, one row that scrolls sideways (bleeding to the screen's
         // edges, so a chip cut off there says there are more), rather than
@@ -91,7 +103,7 @@ export function Regions({ nodes, selected, onPick }: {
                 onClick={() => onPick(on ? null : r.code)}
                 className={cn(chip, "shrink-0", on && "border-foreground/60 bg-secondary")}
               >
-                <Flag code={r.code} className="h-2.5 w-3.5" />
+                <Flag code={r.code} className="h-2.5 w-3.5 rounded-[2px]" />
                 {name}
                 <span className="tnum text-muted-foreground">{r.count}</span>
               </button>

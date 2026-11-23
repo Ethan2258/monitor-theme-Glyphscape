@@ -97,7 +97,7 @@ const StatusBadge = memo(function StatusBadge({ word, label, full, tone }: { wor
     // no longer current.
     <Badge
       data-tip={full}
-      className={cn("tnum shrink-0 gap-1.5 font-normal", tone !== "online" && "text-muted-foreground")}
+      className={cn("tnum shrink-0 gap-1.5 font-normal", tone === "online" ? "text-foreground" : "text-muted-foreground")}
     >
       <span
         className={cn(
@@ -305,11 +305,11 @@ export const NodeCard = memo(function NodeCard({ node, price, remarks, rates, pr
       // Focus is a ring rather than the 1px outline every element gets, which
       // was lost against the card's own border.
       className={cn(
-        "@container min-w-0 cursor-pointer gap-0 p-4 transition-colors outline-none hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "@container min-w-0 cursor-pointer flex-col p-4 transition-colors outline-none hover:border-ring focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
         "[content-visibility:auto] [contain-intrinsic-block-size:auto_330px]",
         // Gone quiet: a red edge and a faint red wash, so it is found at a glance
         // in a grid of live ones.
-        !node.online && deployed(node) && "border-hot/40 bg-[color-mix(in_srgb,var(--hot)_5%,var(--card))]",
+        !node.online && deployed(node) ? "border-hot/40 bg-[color-mix(in_srgb,var(--hot)_5%,var(--card))]" : "bg-card",
       )}
       role="button"
       tabIndex={0}

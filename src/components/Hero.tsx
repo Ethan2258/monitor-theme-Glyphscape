@@ -170,11 +170,12 @@ function Wake({ ids }: { ids: number[] }) {
 }
 
 /** One figure of the row beneath: a label, the figure, and a quieter line under it. */
-function Stat({ label, children, foot, wide = false, className }: { label: string; children: React.ReactNode; foot?: React.ReactNode; wide?: boolean; className?: string }) {
+function Stat({ label, children, foot, wide = false, row = false }: { label: string; children: React.ReactNode; foot?: React.ReactNode; wide?: boolean; row?: boolean }) {
   return (
     // Two to a row on a phone; above it all in one row, a hairline between each.
-    // `wide` takes a share and a half, for a figure that is two figures.
-    <div className={cn("min-w-0 sm:min-w-[8.5rem] sm:border-l sm:pl-5 sm:first:border-l-0 sm:first:pl-0", wide ? "col-span-2 sm:flex-[1.5]" : "sm:flex-1", className)}>
+    // `wide` takes a share and a half, for a figure that is two figures; `row`
+    // a phone's whole row and an even share above it.
+    <div className={cn("min-w-0 sm:min-w-[8.5rem] sm:border-l sm:pl-5 sm:first:border-l-0 sm:first:pl-0", wide ? "col-span-2 sm:flex-[1.5]" : row ? "col-span-2 sm:flex-1" : "sm:flex-1")}>
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="mt-1 text-lg/tight font-medium sm:mt-1.5">{children}</dd>
       {foot && <dd className="tnum mt-1 truncate text-xs text-muted-foreground">{foot}</dd>}
@@ -299,8 +300,7 @@ function Overview({ nodes, cost, rates, primary, onOpen }: {
           </Stat>
         )}
         <Stat
-          wide
-          className="sm:flex-1"
+          row
           label="最近到期"
           foot={
             next ? (

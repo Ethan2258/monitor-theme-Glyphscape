@@ -630,6 +630,7 @@ export function Globe({ markers, selected, onPick }: {
     <div
       data-pond-ignore=""
       data-sky-ignore=""
+      // The same box as Regions.tsx's stand-in (GLOBE_BOX), so nothing moves as it loads.
       className="relative mx-auto aspect-square w-full max-w-[9.5rem] sm:max-w-[17rem] lg:max-w-[19rem]"
     >
       <canvas

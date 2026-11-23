@@ -153,7 +153,13 @@
           ping.push({ ts, task_id, latency: null, loss: 100 })
           continue
         }
-        const latency = Math.round(30 * task_id + 40 * noise(n.id, task_id) + 10 * noise(n.id, ts, task_id, 1))
+        // A route's own level, jitter on it, the evening peak (worst about 21:00
+        // Beijing time) and, every fifty minutes or so, a quarter hour of
+        // congestion, so any hour's strip has slower stretches to show.
+        const base = 30 * task_id + 40 * noise(n.id, task_id)
+        const evening = Math.max(0, Math.cos(((((ts / 3600 + 8) % 24) - 21) / 24) * 2 * Math.PI)) ** 3
+        const burst = Math.max(0, Math.sin((2 * Math.PI * ts) / (2700 + 600 * noise(n.id, task_id, 3)) + 6 * noise(n.id, task_id, 4))) ** 6
+        const latency = Math.round(base * (1 + 0.35 * evening * noise(n.id, task_id, 5) + 0.45 * burst * noise(n.id, task_id, 6)) + 10 * noise(n.id, ts, task_id, 1))
         const spread = Math.round(2 + 15 * noise(n.id, ts, task_id, 2))
         const row = { ts, task_id, latency }
         if (step > 60) row.band = [latency - spread, latency + spread]

@@ -1,7 +1,9 @@
 import { useSyncExternalStore } from "react"
 
 import type { OpenNode } from "@/components/CardPing"
+import { EmptyState } from "@/components/EmptyState"
 import { Flag } from "@/components/Flag"
+import { SearchIcon, ServerIcon } from "@/components/icons"
 import { NodeCard } from "@/components/NodeCard"
 import { NodeTable } from "@/components/NodeTable"
 import { Toolbar, type View } from "@/components/Toolbar"
@@ -115,7 +117,7 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
             data-tip="清除地区筛选"
             className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-foreground/50 bg-secondary px-2.5 text-xs text-foreground transition-colors hover:border-foreground/70 max-sm:h-9 max-sm:px-3"
           >
-            <Flag code={filters.region} className="h-2.5 w-3.5" />
+            <Flag code={filters.region} className="h-2.5 w-3.5 rounded-[2px]" />
             {countryName(filters.region)}
             <span className="ml-0.5 text-muted-foreground" aria-hidden>×</span>
           </button>
@@ -160,16 +162,19 @@ export function NodeList({ nodes, groups, ungrouped, group, shown, counts, filte
       </div>
 
       {nodes.length === 0 ? (
-        <p className="py-16 text-center text-sm text-muted-foreground">还没有节点</p>
+        <div className="py-10">
+          <EmptyState icon={ServerIcon} title="还没有节点">在 hub 后台添加节点并装好 agent，节点上报后会出现在这里。</EmptyState>
+        </div>
       ) : shown.length === 0 ? (
-        <p className="py-16 text-center text-sm text-muted-foreground">
-          没有符合条件的节点。
-          {narrowed && (
-            <button className="underline" onClick={() => onFilters({ ...NO_FILTERS, sort: filters.sort })}>
-              清除筛选
-            </button>
-          )}
-        </p>
+        <div className="py-10">
+          <EmptyState
+            icon={SearchIcon}
+            title={filters.query.trim() ? `没有名称或备注含「${filters.query.trim()}」的节点` : "没有符合条件的节点"}
+            action={narrowed ? { label: "清除筛选", onClick: () => onFilters({ ...NO_FILTERS, sort: filters.sort }) } : undefined}
+          >
+            {narrowed ? `换个关键词或筛选条件，或清除筛选看全部 ${nodes.length} 台。` : undefined}
+          </EmptyState>
+        </div>
       ) : view === "table" && wide ? (
         // onOpen goes to every row as it is, never wrapped per row: App keeps it
         // stable, so a row whose node did not change is skipped on a push.
