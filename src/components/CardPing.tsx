@@ -244,22 +244,27 @@ function hhmm(sec: number): string {
 /** A probe's row: name, strip, latest, loss. */
 function ProbeRow({ line, hours }: { line: ProbeLine; hours: number }) {
   const step = (hours * 3600) / SLOTS
-  const summary = `最近 ${hours} 小时 · 常态 ${line.typical === null ? "—" : ms(line.typical)}${line.loss > 0 ? ` · 丢包 ${line.loss.toFixed(1)} %` : ""}（绿 <${MID_MS} ms · 黄 ${MID_MS}–${SLOW_MS} ms · 红 ≥${SLOW_MS} ms / 超时）`
+  const summary = `最近 ${hours} 小时 · 常态 ${line.typical === null ? "—" : ms(line.typical)}${line.loss > 0 ? ` · 丢包 ${line.loss.toFixed(1)} %` : ""}\n绿 <${MID_MS} ms · 黄 ${MID_MS}–${SLOW_MS} ms · 红 ≥${SLOW_MS} ms / 超时`
   return (
     <div className="grid grid-cols-[4.25rem_minmax(0,1fr)_4.75rem] items-center gap-2 text-xs">
       <span className="truncate text-muted-foreground transition-colors group-hover/ping:text-foreground" data-tip={`${line.name} · ${summary}`}>{line.name}</span>
+      {/* No hint of its own, and no gaps to fall into: each slot wraps the 1 px
+          hairline after it as padding around the painted bar, so all 30 bars
+          keep identical width and corners while a pointer sweeping across goes
+          slot to slot with zero long-summary flashes in between. */}
       <span
-        className="flex h-2.5 min-w-0 gap-px"
+        className="-mr-px flex h-2.5 min-w-0"
         role="img"
         aria-label={`${line.name} 最近 ${hours} 小时延迟，绿顺畅、黄偏高、红较慢或超时`}
-        data-tip={summary}
       >
         {line.slots.map((v, i) => (
           <span
             key={i}
-            className={cn("h-full min-w-0 flex-1 rounded-[1px]", shade(v, line.typical))}
+            className="h-full min-w-0 flex-1 pr-px"
             data-tip={`${hhmm(line.start + i * step)} · ${v === undefined ? "无数据" : ms(v)}`}
-          />
+          >
+            <span className={cn("block h-full w-full rounded-[1px]", shade(v, line.typical))} />
+          </span>
         ))}
       </span>
       <span className={cn("tnum text-right whitespace-nowrap", latencyTone(line.latest))} data-tip={summary}>
@@ -348,7 +353,8 @@ export const PingCell = memo(function PingCell({ id, onOpen }: { id: number; onO
       ref={box}
       role={clickable ? "button" : undefined}
       tabIndex={clickable ? 0 : undefined}
-      data-tip={clickable ? "点击查看网络延迟图表" : undefined}
+      // Named, not hinted: a hint here showed in every gap between the rows.
+      aria-label={clickable ? "查看网络延迟图表" : undefined}
       onClick={clickable ? (e) => { e.stopPropagation(); onOpen(id, "latency") } : undefined}
       onKeyDown={clickable ? (e) => {
         if (e.key === "Enter" || e.key === " ") {

@@ -17,6 +17,9 @@ import { useEffect } from "react"
 const WAIT = 350
 /** Within this long of the last hint closing, the next opens at once. */
 const WARM = 400
+/** Over nothing hinted, the hint waits this long before going: a pointer
+ * crossing the hairline between two hinted things keeps it, unblinking. */
+const LINGER = 120
 const GAP = 8
 const EDGE = 8
 
@@ -54,26 +57,49 @@ export function TipLayer() {
     }
     const hide = () => {
       clearTimeout(timer)
+      pending = null
       if (!target) return
       target.removeAttribute("aria-describedby")
       target = null
       closedAt = performance.now()
       box.hidden = true
     }
+    // The thing waiting out the pause. Moving on to another hinted thing hands
+    // the wait over rather than starting it again, so a pointer that keeps
+    // moving along a strip still gets its hint, for wherever it then is.
+    let pending: HTMLElement | null = null
     const want = (el: HTMLElement) => {
-      if (el === target) return
+      if (pending) {
+        pending = el
+        return
+      }
+      // Back onto the hinted thing before it went: it stays.
       clearTimeout(timer)
+      if (el === target) return
       const warm = target !== null || performance.now() - closedAt < WARM
       if (target) hide()
       if (warm) show(el)
-      else timer = window.setTimeout(() => show(el), WAIT)
+      else {
+        pending = el
+        timer = window.setTimeout(() => {
+          const next = pending
+          pending = null
+          if (next?.isConnected) show(next)
+        }, WAIT)
+      }
     }
 
     const over = (e: PointerEvent) => {
       if (e.pointerType === "touch") return
       const el = (e.target as Element | null)?.closest?.<HTMLElement>("[data-tip]")
       if (el) want(el)
-      else if (target || timer) hide()
+      else if (target) {
+        clearTimeout(timer)
+        timer = window.setTimeout(hide, LINGER)
+      } else if (pending) {
+        clearTimeout(timer)
+        pending = null
+      }
     }
     const out = (e: PointerEvent) => {
       // Leaving the window, or into something with no hint of its own.
@@ -84,7 +110,7 @@ export function TipLayer() {
       if (el.dataset?.tip && el.matches(":focus-visible")) want(el)
     }
     const blur = (e: FocusEvent) => {
-      if (e.target === target) hide()
+      if (e.target === target || e.target === pending) hide()
     }
 
     addEventListener("pointerover", over, { passive: true })
