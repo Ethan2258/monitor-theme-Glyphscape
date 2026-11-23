@@ -341,9 +341,9 @@ export function NodeDetail({ node, historyDays, price, rates, primary, tab: cont
   }, [node.id, hours, tab, attempt, tick])
 
   // What the screen shows, and when it was last painted. The charts stay
-  // dimmed until a frame after the new ones are committed: recharts lays out in
-  // its own effects after React's commit, and undimmed at the commit, the old
-  // picture brightened for the length of that layout before it changed.
+  // dimmed until a frame after the new ones are committed: a chart measures its
+  // box in a layout effect and draws in the render after, and undimmed at the
+  // first commit, the old picture would brighten for a frame before it changed.
   const shownKey = current ? `${tab}:${current.node}:${current.hours}:${current.attempt}` : ""
   const [painted, setPainted] = useState("")
   useEffect(() => {
@@ -473,8 +473,7 @@ export function NodeDetail({ node, historyDays, price, rates, primary, tab: cont
   // each row with a gap on either side flagged per series. Such a row has no
   // neighbour to draw a line to, so it is marked with a dot; without one, a node
   // back for a single bucket after a stretch offline would not show at all.
-  // Flagged here, once per answer, rather than tested by a dot callback recharts
-  // ran for every point of every series on every draw.
+  // Flagged here, once per answer, rather than tested per point on every draw.
   const { chartRows, solo } = useMemo(() => {
     const rows = withGaps(metricRows) as Record<string, unknown>[]
     const solo = new Set<string>()
@@ -630,8 +629,8 @@ export function NodeDetail({ node, historyDays, price, rates, primary, tab: cont
   //
   // Every probe and both versions of every sample are held here whether or not
   // they are on screen, so hiding a probe or enabling despiking selects a
-  // `dataKey` rather than rebuilding the array, which recharts would take as new
-  // data and reset the brush for.
+  // key rather than rebuilding the array, which every chart would take as new
+  // data and redraw from scratch.
   const pingRows = useMemo(() => {
     const rows = new Map<number, PingRow>()
     for (const s of pingSeries) {

@@ -125,10 +125,9 @@ export function cycle(billing: string): string {
   return CYCLE_WORDS[months] ?? (months % 12 ? `${months} 个月付` : `${months / 12} 年付`)
 }
 
-// Built once: recharts calls a tickFormatter for every sample when laying out an
-// axis rather than once per tick drawn, and an Intl formatter constructed per call
-// would be the largest single cost on the detail page -- 348 ms of a 1531 ms
-// click-to-chart. The zone resolves once, which only an OS timezone change under
+// Built once: a clock is printed for every tick and every hovered bucket, and an
+// Intl formatter constructed per call was once the largest single cost on the
+// detail page -- 348 ms of a 1531 ms click-to-chart. The zone resolves once, which only an OS timezone change under
 // an open tab would notice.
 //
 // They take epoch milliseconds, as Date does. The hub answers in seconds, which
@@ -204,10 +203,9 @@ export function cpuName(name: string): string {
 
 // Ticks on round clock values across `[from, to]`, in epoch milliseconds.
 //
-// recharts selects ticks by "nice number" on the raw value, which on a timestamp
-// yields 05:14 and 10:22 where a chart requires 06:00 and 12:00; it never uses a
-// time scale's own ticks, whatever `scale` specifies. The axis is therefore given
-// the list explicitly: the smallest step from the ladder keeping the count under
+// "Nice numbers" on the raw value would put ticks on a timestamp at 05:14 and
+// 10:22 where a chart requires 06:00 and 12:00. The axis is therefore given the
+// list explicitly: the smallest step from the ladder keeping the count under
 // `count`, phased on local midnight so a daily tick lands on the day even in a
 // zone offset by 30 or 45 minutes. Past what two weeks can cover, on the first of
 // a month: months differ in length, so no fixed step lands on one.
@@ -269,9 +267,9 @@ const LADDER = [1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10]
  * The gridlines for a zero-anchored axis: the top and the three quarters beneath
  * it.
  *
- * Specified explicitly rather than left to recharts, which selects "nice" decimal
- * values whatever domain it is given -- a top of 30 MiB returns 7.6, 15.3, 22.9,
- * 30, neither quarters nor round in the unit they are printed in.
+ * Specified explicitly rather than as "nice" decimal values, which for a top of
+ * 30 MiB are 7.6, 15.3, 22.9, 30: neither quarters nor round in the unit they
+ * are printed in.
  */
 export function quarters(top: number): number[] {
   return [0, 0.25, 0.5, 0.75, 1].map((f) => top * f)

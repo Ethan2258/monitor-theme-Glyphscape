@@ -50,8 +50,8 @@ function syncTitle(nodeName: string | undefined, siteName: string | undefined) {
 // week for anonymous callers.
 type Me = { authed: boolean; github: boolean; site_name: string; public_page: boolean; history_days?: number; site?: string }
 
-// Split out because recharts is most of this bundle and the list page draws no
-// chart, with the rest fetched immediately after it paints.
+// Split out because the list page draws no chart: the node page and its charts
+// are fetched immediately after the list paints.
 // One request, shared by the idle prefetch, a hover and the page itself. Once it
 // has arrived the component is used directly: `lazy` alone would suspend on its
 // first render anyway, and React then holds the fallback up for a few hundred

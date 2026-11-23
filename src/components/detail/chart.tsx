@@ -1,22 +1,15 @@
-import { createContext, useContext, useState, useSyncExternalStore, type ComponentProps, type ReactNode } from "react"
-import { createPortal } from "react-dom"
-import type { DotItemDotProps, Tooltip, TooltipContentProps } from "recharts"
+import { useSyncExternalStore, type ReactNode } from "react"
 
-import { clockFor, tickClock, timeTicks } from "@/lib/format"
+import { tickClock, timeTicks } from "@/lib/format"
+import { MARGIN, type Row, type TimeAxis } from "./Plot"
 
-// What the resource panels and the latency chart share: the axes' look, the
-// tooltip, the series' defaults, and the time axis they all read against.
+// What the resource panels and the latency chart share beyond the chart itself
+// (Plot.tsx): the axes' ranges and ticks, the dash decision, the panel frame
+// and its readout.
 
-export const AXIS = { stroke: "currentColor", fontSize: 11, tickLine: false, axisLine: false }
-
-// Room right of the plot for the last time label, which is centred on its tick:
-// at recharts' default 5 px a tick at the window's end printed as "14:0".
-export const CHART_MARGIN = { top: 4, right: 16, bottom: 0, left: 0 }
-
-// No grow-in animation: it would spend 1.5 s drawing a line across the panel on
-// every range change, on a page meant to be read at a glance, and on the latency
-// chart across seven hundred points per probe.
-export const SERIES = { dot: false as const, activeDot: { r: 3 }, strokeWidth: 1.5, isAnimationActive: false }
+// Room right of the plot for the last time label (Plot.tsx), shared with the
+// range control and the uptime strip, which line up with the plot's ends.
+export const CHART_MARGIN = MARGIN
 
 /**
  * Whether a dash pattern would still read as a pattern: once the points sit
@@ -51,76 +44,6 @@ export function axisWidth(narrow: boolean) {
   return narrow ? 52 : 68
 }
 
-type TooltipProps = ComponentProps<typeof Tooltip>
-type SortItem = Parameters<Extract<NonNullable<TooltipProps["itemSorter"]>, (...a: never[]) => unknown>>[0]
-
-/**
- * A tooltip sorter listing the series in `keys` order, which is the order of
- * the panel's key: recharts sorts by name otherwise, so 上行 came before 下行 and
- * Swap before 内存.
- */
-export function sortBy(keys: string[]) {
-  return (item: SortItem) => keys.indexOf(String(item.dataKey))
-}
-
-const tooltips = new Map<number, TooltipProps>()
-
-/**
- * The tooltip for a window `hours` wide, one object per width so its identity
- * holds across renders: a fresh one would have recharts redraw every panel.
- *
- * Nor does it slide. Entering a chart at its right edge, it appears beside the
- * cursor first and would glide 400 ms back within the chart, overhanging the
- * page by up to 140 px and flashing a horizontal scrollbar. Drawn on the card's
- * own ground: recharts' default is a white box in either palette. Its label is
- * the axis's own clock -- the date only where the window spans days, and never
- * the seconds, which a bucket of a minute or more does not have.
- *
- * Pinned to the top of the plot rather than set beside the cursor at its
- * height, where it sat on the very lines it described; the lines of a resource
- * panel mostly run in its lower half, and the cursor still says which minute.
- */
-export function tooltipFor(hours: number): TooltipProps {
-  let tip = tooltips.get(hours)
-  if (!tip) {
-    const clock = clockFor(hours)
-    tip = {
-      isAnimationActive: false,
-      separator: " ",
-      labelFormatter: (ts: unknown) => clock(Number(ts)),
-      // Held within the plot on both axes, and never wider than a phone's chart:
-      // a tooltip overhanging the panel widened the page by 42 px after a tap.
-      allowEscapeViewBox: { x: false, y: false },
-      position: { y: CHART_MARGIN.top },
-      wrapperStyle: { maxWidth: "100%", zIndex: 10 },
-      contentStyle: {
-        fontSize: 12,
-        background: "var(--popover)",
-        border: "1px solid var(--border)",
-        borderRadius: 8,
-        boxShadow: "0 6px 20px rgb(0 0 0 / 14%)",
-        whiteSpace: "normal",
-      },
-      labelStyle: { color: "var(--muted-foreground)", marginBottom: 2 },
-      itemStyle: { padding: 0 },
-      cursor: { stroke: "var(--ring)", strokeDasharray: "3 3" },
-    }
-    tooltips.set(hours, tip)
-  }
-  return tip
-}
-
-/**
- * A dot for a point with no neighbour to draw a line to, read off a flag the
- * rows carry (`solo`) rather than tested against the neighbours per point on
- * every render. Passed only to a series that has such a point at all, so the
- * common case draws no dots and creates no elements for them.
- */
-export function soloDot({ cx, cy, payload, dataKey, stroke }: DotItemDotProps) {
-  const solo = (payload as { solo?: Record<string, true> } | undefined)?.solo
-  return cy == null || !solo?.[String(dataKey)] ? null : <circle cx={cx} cy={cy} r={2} fill={stroke} />
-}
-
 const DAY = 86_400_000
 // Day steps for a window of weeks to months, phased from the first midnight in
 // it rather than from the epoch: a weekly tick on Thursdays left a month's axis
@@ -139,9 +62,8 @@ function dayTicks(from: number, to: number, count: number): number[] {
 }
 
 /**
- * A real time axis over `[from, to]` rather than the category axis recharts
- * defaults to: on a category axis ticks are selected by index, so a period the
- * agent was offline for collapses to nothing. The span is the window asked for,
+ * A real time axis over `[from, to]`, not one row per step: by row, a period
+ * the agent was offline for would collapse to nothing. The span is the window asked for,
  * not the first and last rows, so a node away for five of six hours draws its
  * one hour where it fell and leaves the rest empty.
  *
@@ -149,7 +71,7 @@ function dayTicks(from: number, to: number, count: number): number[] {
  * fit. Built once per data, range and width by its callers, since fresh `ticks`
  * and `tickFormatter` on each render redraw the whole chart.
  */
-export function timeAxis(from: number, to: number, hours: number, width: number) {
+export function timeAxis(from: number, to: number, hours: number, width: number): TimeAxis {
   const span = to - from
   // A label every 72 px or so, about twice the width of "14:00" or "11/20",
   // and on a phone's 260 px plot no fewer than four, five past a week: at
@@ -157,8 +79,8 @@ export function timeAxis(from: number, to: number, hours: number, width: number)
   // keep, and a week on a seven-day one -- two labels and one.
   const least = span > 7 * DAY ? 5 : 4
   const count = Math.max(least, Math.min(8, Math.floor(width / 72)))
-  // Explicit, or recharts places them at 05:14 and 10:22. Any that still collide
-  // are dropped by `minTickGap`.
+  // On round times, not at 05:14 and 10:22. Any that still collide are dropped
+  // where the chart draws them (Plot.tsx).
   let ticks = span > 7 * DAY && span <= 120 * DAY ? dayTicks(from, to, count) : timeTicks(from, to, count)
   const format = tickClock(ticks, hours)
   // A label is centred on its tick, so one near the end would overhang the
@@ -171,20 +93,7 @@ export function timeAxis(from: number, to: number, hours: number, width: number)
     const half = format(t).length * 3.3
     return (to - t) * px + CHART_MARGIN.right >= half && (t - from) * px >= half
   })
-  return {
-    dataKey: "ts",
-    type: "number" as const,
-    domain: [from, to],
-    // Rows a bucket before the window's start, or past a zoomed span, are drawn
-    // clipped rather than widening the axis to hold them.
-    allowDataOverflow: true,
-    ticks,
-    tickFormatter: tickClock(ticks, hours),
-    // Small: the count above is already what fits, and a gap of 72 px for the
-    // longer dates left a phone's month with two labels of its three.
-    minTickGap: 12,
-    ...AXIS,
-  }
+  return { domain: [from, to], ticks, format: tickClock(ticks, hours) }
 }
 
 export { pct } from "@/lib/format"
@@ -192,9 +101,8 @@ export { pct } from "@/lib/format"
 const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"]
 
 /**
- * An axis label with its unit held to the figure. Recharts wraps a tick at its
- * spaces once the label is wider than the axis allows, and on a phone's 52 px
- * axis "100 MB" broke into two lines with the first cut off by the plot's top.
+ * An axis label with its unit held to the figure by a no-break space, as every
+ * figure on the page prints its unit.
  */
 export const keepTogether = (label: string) => label.replace(" ", "\u00a0")
 
@@ -259,8 +167,7 @@ export function useNarrow(): boolean {
  * from at or below `lo` to above `hi`, about `count` of them. The top tick
  * clears `hi` by at least a tenth of a step, so the highest line has a gridline
  * and a label above it instead of running along the plot's top edge past the
- * last label -- recharts' "auto" put a probe at 45-50 ms above a top tick of
- * 40 ms.
+ * last label: fitted loosely, a probe at 45-50 ms ran above a top tick of 40 ms.
  */
 export function niceAxis(lo: number, hi: number, count = 5): { domain: [number, number]; ticks: number[] } {
   if (!Number.isFinite(lo) || !Number.isFinite(hi)) return { domain: [0, 1], ticks: [0, 1] }
@@ -276,53 +183,18 @@ export function niceAxis(lo: number, hi: number, count = 5): { domain: [number, 
 
 export type Key = { label: string; color: string; dash?: string }
 
-/** Where a panel's readout goes: over its own title row. */
-const ReadoutSlot = createContext<HTMLElement | null>(null)
-
-type ReadoutText = (row: Record<string, unknown>) => string
-const readouts = new Map<string, (props: TooltipContentProps) => ReactNode>()
-
 /**
- * A tooltip `content` for a phone: one line of the touched minute's values,
- * drawn over the panel's own title row rather than as a box over the plot. The
- * box was 250-280 px of a 390 px screen and covered the lines it described.
- * `text` reads the values off the row. Built once per `key` and window, so
- * recharts is handed the same function on every render.
+ * The hovered or touched minute's values on one line, drawn over the panel's
+ * own title row rather than as a box over the plot: on a phone the box was
+ * 250-280 px of a 390 px screen and covered the lines it described, and on a
+ * desktop the CPU's peak band runs along the plot's top, under any box there.
  */
-export function readoutFor(key: string, hours: number, text: ReadoutText) {
-  const id = `${key}:${hours}`
-  let content = readouts.get(id)
-  if (!content) {
-    const clock = clockFor(hours)
-    content = (props) => (
-      <Readout
-        active={props.active}
-        row={props.payload?.[0]?.payload as Record<string, unknown> | undefined}
-        label={props.label}
-        clock={clock}
-        text={text}
-      />
-    )
-    readouts.set(id, content)
-  }
-  return content
-}
-
-function Readout({ active, row, label, clock, text }: {
-  active?: boolean
-  row?: Record<string, unknown>
-  label?: unknown
-  clock: (ms: number) => string
-  text: ReadoutText
-}) {
-  const slot = useContext(ReadoutSlot)
-  if (!slot || !active || !row) return null
-  return createPortal(
+export function ReadoutLine({ row, clock, text }: { row: Row; clock: (ms: number) => string; text: (row: Row) => string }) {
+  return (
     <div className="tnum absolute inset-0 flex items-center gap-2 bg-card text-xs leading-4">
-      <span className="shrink-0 text-muted-foreground">{clock(Number(label ?? row.ts))}</span>
+      <span className="shrink-0 text-muted-foreground">{clock(row.ts)}</span>
       <span className="min-w-0 truncate text-foreground">{text(row)}</span>
-    </div>,
-    slot,
+    </div>
   )
 }
 
@@ -341,15 +213,13 @@ export function Swatch({ color, dash }: { color: string; dash?: string }) {
  * key: sized by its content, a row with a key was 3 px taller and the plots
  * beside each other in the grid sat out of line.
  *
- * The row is also where the readout of the hovered or touched minute is drawn (see
- * `readoutFor`), over the title, which it covers only while the pointer is on the
- * plot.
+ * The row is also where `readout`, the hovered or touched minute's line
+ * (`ReadoutLine`), is drawn, over the title, while the pointer is on the plot.
  */
-export function Panel({ title, keys, children }: { title: string; keys?: Key[]; children: ReactNode }) {
-  const [slot, setSlot] = useState<HTMLElement | null>(null)
+export function Panel({ title, keys, readout, children }: { title: string; keys?: Key[]; readout?: ReactNode; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <div ref={setSlot} className="relative mb-2 flex h-5 items-center justify-between gap-3">
+      <div className="relative mb-2 flex h-5 items-center justify-between gap-3">
         <h4 className="truncate text-xs leading-4 font-medium text-muted-foreground">{title}</h4>
         {keys && (
           <div className="flex shrink-0 items-center gap-3 text-[11px] leading-4 text-muted-foreground">
@@ -361,12 +231,9 @@ export function Panel({ title, keys, children }: { title: string; keys?: Key[]; 
             ))}
           </div>
         )}
+        {readout}
       </div>
-      {/* Clipped sideways: the tooltip is held within the plot, but its box
-          can still be wider than a phone's panel for a moment. */}
-      <div className="h-40 w-full text-muted-foreground [overflow-x:clip] [overflow-clip-margin:4px]">
-        <ReadoutSlot value={slot}>{children}</ReadoutSlot>
-      </div>
+      <div className="h-40 w-full text-muted-foreground">{children}</div>
     </div>
   )
 }

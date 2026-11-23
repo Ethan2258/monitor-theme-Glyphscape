@@ -2,7 +2,7 @@
   "name": "字景 · Glyphscape",
   "short": "inkpond",
   "description": "Monitor 字符场景主题：锦鲤/幽灵双场景、点阵地球仪、三网延迟与双币折算。",
-  "version": "1.2.28",
+  "version": "1.2.29",
   "author": "Ethan2258",
   "url": "https://github.com/Ethan2258/monitor-theme-Glyphscape",
   "config": [
